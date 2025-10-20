@@ -32,7 +32,7 @@ It adapts cutoffs and quantiles each step, fits per-band linear maps with EMA cl
 
 ### Regional Split Sampler (rss)
 
-Allows prompting by two region, or more can be defined in file. Splits the image width into left and right regions using a soft mask (center, feather), applies separate positive conditionings to each side, then calls `nodes.common_ksampler` with the chosen sampler/scheduler to generate a LATENT.
+Allows prompting by two regions, more can be defined in file. Splits the image width into left and right regions using a soft mask (center, feather), applies separate positive conditionings to each side, then calls `nodes.common_ksampler` with the chosen sampler/scheduler to generate a LATENT.
 
 Registers as `Regional Split Sampler` with inputs for model, seed, steps, cfg, denoise, center, and feather.
 
