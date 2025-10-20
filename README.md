@@ -56,6 +56,6 @@ Renders a 2D wave path displaced by those values into spikes, rasterizes a color
 
 ### vectorpusher
 
-Improve adherence to prompts. Implements a conditioning node `vectorpusher` that tokenizes the prompt and, for each CLIP token, nudges its embedding toward a soft top-k neighbor blend using an entropy- and attention-scaled trust-region step with a KL bound and angle cap.
+Improve adherence to prompts. Adds a conditioning node `vectorpusher` that tokenizes the prompt and, for each CLIP token, nudges its embedding toward a soft top-k neighbor blend using an entropy and attention-scaled trust-region step with a KL bound and angle cap.
 
 Re-encodes the adjusted tokens to `CONDITIONING`, returns a params string, and registers the node. Inspired by [Vector Sculptor from Extraltodeus.](https://github.com/Extraltodeus/Vector_Sculptor_ComfyUI)
