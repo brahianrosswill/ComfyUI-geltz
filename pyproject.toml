@@ -1,0 +1,14 @@
+[project]
+name = "ComfyUI-geltz"
+description = "Various custom nodes; guidance, sampling, tokenization, etc."
+version = "1.0.0"
+license = { file = "LICENSE" }
+
+[project.urls]
+Repository = "https://github.com/geltz/ComfyUI-geltz"
+#  Used by Comfy Registry https://comfyregistry.org
+
+[tool.comfy]
+PublisherId = "geltz"
+DisplayName = "ComfyUI-geltz"
+Icon = ""
