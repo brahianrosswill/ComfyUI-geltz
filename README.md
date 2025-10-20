@@ -26,7 +26,7 @@ The spectral variant adds per-channel seeds and frequency-domain shaping via `be
 
 Precise rescaling of CFG to prevent oversaturation. Does not affect original structure. Hooks pre-CFG and rescales the guidance g = cond − uncond by matching low, mid, and high frequency quantiles to the conditional.
 
-It adapts cutoffs and quantiles each step, fits per-band linear maps with EMA clamps and a CFG-dependent rescale, applies them in FFT space, and returns cond_new = uncond + g_scaled. 
+Adapts cutoffs and quantiles each step, fits per-band linear maps with EMA clamps and a CFG-dependent rescale, applies them in FFT space, and returns cond_new = uncond + g_scaled. 
 
 ---
 
@@ -58,4 +58,4 @@ Renders a 2D wave path displaced by those values into spikes, rasterizes a color
 
 Improve adherence to prompts. Adds a conditioning node `vectorpusher` that tokenizes the prompt and, for each CLIP token, nudges its embedding toward a soft top-k neighbor blend using an entropy and attention-scaled trust-region step with a KL bound and angle cap.
 
-Re-encodes the adjusted tokens to `CONDITIONING`, returns a params string, and registers the node. Inspired by [Vector Sculptor from Extraltodeus.](https://github.com/Extraltodeus/Vector_Sculptor_ComfyUI)
+Inspired by [Vector Sculptor from Extraltodeus.](https://github.com/Extraltodeus/Vector_Sculptor_ComfyUI)
