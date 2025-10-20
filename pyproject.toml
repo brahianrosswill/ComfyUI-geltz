@@ -1,6 +1,6 @@
 [project]
 name = "ComfyUI-geltz"
-description = "Various custom nodes; guidance, sampling, tokenization, etc."
+description = "Various custom nodes; guidance, latents, sampling, tokenization, etc."
 version = "1.0.0"
 license = { file = "LICENSE" }
 
