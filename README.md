@@ -1,6 +1,6 @@
 ### Adaptive Refined Exponential Solver (ares)
 
-Deterministic variation of the `res_multistep` scheduler. Batches σ, auto-converts model outputs between ε/x₀/v, computes Δt, and applies a momentum aware Heun step to advance the latent and estimate x₀.
+Deterministic variation of the `res_multistep` sampler. Batches σ, auto-converts model outputs between ε/x₀/v, computes Δt, and applies a momentum aware Heun step to advance the latent and estimate x₀.
 
 Clamps σ to [sigma_min, sigma_max], falling back to Euler when unavailable or with <2 sigmas, iterating `_ARES_STEP` across the schedule. Registers as `ares` within KSampler's sampler selection.
 
