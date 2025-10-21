@@ -32,7 +32,12 @@ class _SoftmaxHook:
         def hooked(input, dim=None, _stacklevel=3, dtype=None):
             if dim == -1 and input.dim() == 3 and input.shape[-1] == input.shape[-2]:
                 x = input / self.temp
+                finite_row = torch.isfinite(x).any(dim=-1, keepdim=True)
+                x = x.masked_fill(~torch.isfinite(x), float("-inf"))
                 A = self._orig(x, dim=dim, dtype=dtype)
+                if not finite_row.all():
+                    N = A.shape[-1]
+                    A = torch.where(finite_row, A, torch.full_like(A, 1.0 / float(N)))
                 N = A.shape[-1]
                 flat = A.reshape(-1, N, N)
                 eps = 1e-12
@@ -53,22 +58,28 @@ class _SoftmaxHook:
         self._orig = None
 
 def _norm2(t):
-    return torch.sqrt((t.float() * t.float()).sum() + 1e-12)
+    x = torch.nan_to_num(t.float(), nan=0.0, posinf=0.0, neginf=0.0)
+    return torch.sqrt((x * x).sum() + 1e-12)
 
 def _orth(delta, base):
-    b2 = (base.float() * base.float()).sum()
-    if b2 <= 0:
+    b2 = float((base.float() * base.float()).sum().item())
+    if not math.isfinite(b2) or b2 <= 0.0:
         return delta
     proj = (delta.float() * base.float()).sum() / b2
     return delta - proj * base
 
 def _clip_tr(delta):
     x = delta.float().flatten()
-    med = x.median()
-    mad = (x - med).abs().median() + 1e-12
+    m = torch.isfinite(x)
+    if not m.any():
+        return torch.zeros_like(delta)
+    xm = torch.where(m, x, torch.tensor(0.0, device=x.device, dtype=x.dtype))
+    med = torch.median(xm[m])
+    mad = torch.median((xm[m] - med).abs()) + 1e-12
     lo = med - 3.0 * mad
     hi = med + 3.0 * mad
-    return delta.clamp(min=lo.item(), max=hi.item())
+    x2 = torch.where(m, torch.clamp(xm, min=lo, max=hi), med)
+    return x2.view_as(delta).to(delta.dtype)
 
 def _hann2d(h, w, device, dtype):
     y = torch.hann_window(h, periodic=False, device=device, dtype=dtype)
@@ -80,8 +91,8 @@ def _phase_corr_shift(prev, curr):
     shifts = []
     eps = 1e-8
     for b in range(B):
-        A = prev[b, 0]
-        Bc = curr[b, 0]
+        A = torch.nan_to_num(prev[b, 0], nan=0.0, posinf=0.0, neginf=0.0)
+        Bc = torch.nan_to_num(curr[b, 0], nan=0.0, posinf=0.0, neginf=0.0)
         FA = torch.fft.rfftn(A)
         FB = torch.fft.rfftn(Bc)
         R = FA * torch.conj(FB)
@@ -165,7 +176,7 @@ class FAMG_Patch:
         beta = 0.7
         kappa = 1.2
         smin, smax = 0.2, 25.0
-        tau = 0.35
+        tau = 0.25
         state = _State(beta=beta)
 
         def attn_override(default_attn, q, k, v, heads, mask=None, attn_precision=None, skip_reshape=False, skip_output_reshape=False, **kwargs):
@@ -194,6 +205,7 @@ class FAMG_Patch:
             h = max(8, H // scale)
             w = max(8, W // scale)
             low = torch.nn.functional.interpolate(x_full.float().mean(dim=1, keepdim=True), size=(h, w), mode="bilinear", align_corners=False)
+            low = torch.nan_to_num(low, nan=0.0, posinf=0.0, neginf=0.0)
             dy = torch.tensor(0.0, device=x_full.device, dtype=x_full.dtype)
             dx = torch.tensor(0.0, device=x_full.device, dtype=x_full.dtype)
             if state.prev_low is not None and state.prev_low.shape[-2:] == (h, w):
@@ -215,12 +227,14 @@ class FAMG_Patch:
             c0 = dict(c)
             c0["transformer_options"] = dict(to)
             eps0 = apply_model_method(x, t, **c0)
+            eps0 = torch.nan_to_num(eps0, nan=0.0, posinf=0.0, neginf=0.0)
             c1 = dict(c)
             to1 = dict(to)
             to1["optimized_attention_override"] = attn_override
             c1["transformer_options"] = to1
             with _SoftmaxHook(lam=lam, temp=temp):
                 epslr = apply_model_method(x, t, **c1)
+            epslr = torch.nan_to_num(epslr, nan=0.0, posinf=0.0, neginf=0.0)
             b = eps0.shape[0]
             u = eps0.float().flatten(1)
             v = epslr.float().flatten(1)
@@ -231,19 +245,23 @@ class FAMG_Patch:
             cos = (dot / (n0 * nv)).clamp(-1.0, 1.0)
             delta = epslr - a.view(b, 1, 1, 1).to(eps0.dtype) * eps0
             dn = delta.float().flatten(1).norm(dim=1).clamp_min(1e-8)
-            s_ang = torch.sqrt(1.0 - cos.square())
+            s_ang = torch.sqrt((1.0 - cos.square()).clamp_min(0.0))
             s_clip = (tau * n0 / dn).clamp_max(1.0)
             w_lrmg = (float(strength) * s_ang * s_clip).view(b, 1, 1, 1).to(eps0.dtype)
             delta = _orth(delta, eps0)
             delta = _clip_tr(delta)
             r = (_norm2(delta) / (_norm2(eps0) + 1e-12)).item()
+            if not math.isfinite(r):
+                r = 0.0
             s_pag = max(smin, min(smax, kappa * r))
             if state.m is None or state.m.shape != delta.shape:
                 state.m = delta.detach()
             else:
                 state.m = state.beta * state.m + (1.0 - state.beta) * delta.detach()
+            state.m = torch.nan_to_num(state.m, nan=0.0, posinf=0.0, neginf=0.0)
             w_map = w_lrmg * mask.to(eps0.dtype)
-            return eps0 + w_map * delta + s_pag * state.m
+            out = eps0 + w_map * delta + s_pag * state.m
+            return torch.nan_to_num(out, nan=0.0, posinf=0.0, neginf=0.0)
 
         m.set_model_unet_function_wrapper(unet_wrapper)
         return (m,)
