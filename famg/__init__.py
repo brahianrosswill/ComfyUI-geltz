@@ -1,5 +1,3 @@
-# Flow-Aligned Mask Guidance
-
 import math
 import torch
 import torch.nn.functional as F
@@ -22,7 +20,7 @@ def _long_range_soft_bias(n, r_frac, device, dtype):
     return _mask_cache[key].to(device=device, dtype=dtype)
 
 class _SoftmaxHook:
-    def __init__(self, lam=0.6, temp=1.4):
+    def __init__(self, lam=0.6, temp=1.3):
         self.lam = lam
         self.temp = temp
         self._orig = None
@@ -55,19 +53,19 @@ class _SoftmaxHook:
 def _norm2(t):
     return torch.sqrt((t.float() * t.float()).sum() + 1e-12)
 
-def _orth(delta, base):
+def _orth_frac(delta, base, eta=0.5):
     b2 = (base.float() * base.float()).sum()
     if b2 <= 0:
         return delta
     proj = (delta.float() * base.float()).sum() / b2
-    return delta - proj * base
+    return delta - eta * proj * base
 
-def _clip_tr(delta):
+def _clip_tr(delta, k=6.0):
     x = delta.float().flatten()
     med = x.median()
     mad = (x - med).abs().median() + 1e-12
-    lo = med - 3.0 * mad
-    hi = med + 3.0 * mad
+    lo = med - k * mad
+    hi = med + k * mad
     return delta.clamp(min=lo.item(), max=hi.item())
 
 def _hann2d(h, w, device, dtype):
@@ -90,20 +88,14 @@ def _phase_corr_shift(prev, curr):
         idx = torch.argmax(r)
         iy = int(idx // W)
         ix = int(idx % W)
-        if iy > H // 2:
-            dy = iy - H
-        else:
-            dy = iy
-        if ix > W // 2:
-            dx = ix - W
-        else:
-            dx = ix
+        dy = iy - H if iy > H // 2 else iy
+        dx = ix - W if ix > W // 2 else ix
         shifts.append((dy, dx))
     dy = torch.tensor([s[0] for s in shifts], device=curr.device, dtype=curr.dtype)
     dx = torch.tensor([s[1] for s in shifts], device=curr.device, dtype=curr.dtype)
     return dy, dx
 
-def _build_sliding_mask(H, W, k, s, offy, offx, device, dtype):
+def _build_sliding_mask(H, W, k, s, offy, offx, device, dtype, gain):
     win = _hann2d(k, k, device, dtype)
     acc = torch.zeros((H, W), device=device, dtype=dtype)
     start_y = int(math.floor(offy)) - k
@@ -126,10 +118,11 @@ def _build_sliding_mask(H, W, k, s, offy, offx, device, dtype):
         y += s
     ssum = acc.sum().clamp_min(1e-8)
     acc = acc * (float(H * W) / float(ssum))
+    acc = acc * gain
     return acc[None, None, :, :]
 
 class _State:
-    def __init__(self, beta=0.7):
+    def __init__(self, beta=0.4):
         self.beta = beta
         self.m = None
         self.shape = None
@@ -171,11 +164,14 @@ class FAMG_Patch:
         flow_gain = 1.0
         m = model.clone()
         lam = 0.6
-        temp = 1.4
-        beta = 0.7
-        kappa = 1.2
-        smin, smax = 0.2, 25.0
-        tau = 0.35
+        temp = 1.3
+        beta = 0.4
+        kappa = 2.2
+        smin, smax = 0.0, 50.0
+        tau = 0.9
+        eta_orth = 0.5
+        legacy_gain = 1.0 + 0.6 * float(strength)
+        mask_gain = 1.0 + 0.5 * float(strength)
         state = _State(beta=beta)
 
         def attn_override(default_attn, q, k, v, heads, mask=None, attn_precision=None, skip_reshape=False, skip_output_reshape=False, **kwargs):
@@ -213,8 +209,7 @@ class FAMG_Patch:
             state.prev_low = low.detach()
             state.offy = (state.offy + state.delta_o[0] + float(dy.item())) % max(state.s, 1)
             state.offx = (state.offx + state.delta_o[1] + float(dx.item())) % max(state.s, 1)
-            mask = _build_sliding_mask(H, W, state.k, state.s, state.offy, state.offx, x_full.device, x_full.dtype)
-            return mask
+            return _build_sliding_mask(H, W, state.k, state.s, state.offy, state.offx, x_full.device, x_full.dtype, mask_gain)
 
         def unet_wrapper(apply_model_method, options_dict):
             c = options_dict.get("c", {})
@@ -246,17 +241,17 @@ class FAMG_Patch:
             cos = (dot / (n0 * nv)).clamp(-1.0, 1.0)
             delta = epslr - a.view(b, 1, 1, 1).to(eps0.dtype) * eps0
             delta = torch.nan_to_num(delta, nan=0.0, posinf=0.0, neginf=0.0)
+            delta = _orth_frac(delta, eps0, eta=eta_orth)
+            delta = _clip_tr(delta, k=6.0)
+            delta = torch.nan_to_num(delta, nan=0.0, posinf=0.0, neginf=0.0)
             dn = delta.float().flatten(1).norm(dim=1).clamp_min(1e-8)
             s_ang = torch.sqrt((1.0 - cos.square()).clamp_min(0.0))
-            s_clip = (tau * n0 / dn).clamp_max(1.0)
-            w_lrmg = (float(strength) * s_ang * s_clip).view(b, 1, 1, 1).to(eps0.dtype)
-            delta = _orth(delta, eps0)
-            delta = _clip_tr(delta)
-            delta = torch.nan_to_num(delta, nan=0.0, posinf=0.0, neginf=0.0)
+            s_clip = (tau * n0 / dn).clamp_max(3.0)
+            w_lrmg = (legacy_gain * float(strength) * s_ang * s_clip).view(b, 1, 1, 1).to(eps0.dtype)
             r = (_norm2(delta) / (_norm2(eps0) + 1e-12)).item()
             if not math.isfinite(r):
                 r = 0.0
-            s_pag = max(smin, min(smax, kappa * r))
+            s_pag = max(smin, min(smax, kappa * math.sqrt(max(r, 0.0))))
             if state.m is None or state.m.shape != delta.shape or not torch.isfinite(state.m).all():
                 state.m = delta.detach()
             else:
