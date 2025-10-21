@@ -32,12 +32,6 @@ The spectral variant adds per-channel seeds and frequency-domain shaping via `be
 
 ---
 
-### FFT Jitter (fftj)
-
-Improves details by adding tiny jitters to self-attention using an FFT. Values above `0.5` may do the opposite.
-
----
-
 ### Quantile Match Scaling (qms)
 
 Precise rescaling of CFG to prevent oversaturation. Does not affect original structure. Hooks pre-CFG and rescales the guidance g = cond − uncond by matching low, mid, and high frequency quantiles to the conditional.
