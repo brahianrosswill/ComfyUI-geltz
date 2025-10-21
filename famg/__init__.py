@@ -1,3 +1,5 @@
+# Flow-Aligned Mask Guidance
+
 import math
 import torch
 import torch.nn.functional as F
@@ -138,16 +140,6 @@ class _State:
         self.s = None
         self.delta_o = None
 
-    def reset(self):
-        self.m = None
-        self.shape = None
-        self.prev_low = None
-        self.offy = 0.0
-        self.offx = 0.0
-        self.k = None
-        self.s = None
-        self.delta_o = None
-
 class FAMG_Patch:
     @classmethod
     def INPUT_TYPES(cls):
@@ -218,22 +210,17 @@ class FAMG_Patch:
             c = options_dict.get("c", {})
             x = options_dict["input"]
             t = options_dict["timestep"]
-            if float(strength) <= 0.0:
-                state.reset()
-                return apply_model_method(x, t, **c)
             to = c.get("transformer_options", {})
             mask = make_mask_and_update_flow(x)
             c0 = dict(c)
             c0["transformer_options"] = dict(to)
             eps0 = apply_model_method(x, t, **c0)
-            eps0 = torch.nan_to_num(eps0, nan=0.0, posinf=0.0, neginf=0.0)
             c1 = dict(c)
             to1 = dict(to)
             to1["optimized_attention_override"] = attn_override
             c1["transformer_options"] = to1
             with _SoftmaxHook(lam=lam, temp=temp):
                 epslr = apply_model_method(x, t, **c1)
-            epslr = torch.nan_to_num(epslr, nan=0.0, posinf=0.0, neginf=0.0)
             b = eps0.shape[0]
             u = eps0.float().flatten(1)
             v = epslr.float().flatten(1)
@@ -243,24 +230,20 @@ class FAMG_Patch:
             a = dot / (n0.square())
             cos = (dot / (n0 * nv)).clamp(-1.0, 1.0)
             delta = epslr - a.view(b, 1, 1, 1).to(eps0.dtype) * eps0
-            delta = torch.nan_to_num(delta, nan=0.0, posinf=0.0, neginf=0.0)
             dn = delta.float().flatten(1).norm(dim=1).clamp_min(1e-8)
-            s_ang = torch.sqrt((1.0 - cos.square()).clamp_min(0.0))
+            s_ang = torch.sqrt(1.0 - cos.square())
             s_clip = (tau * n0 / dn).clamp_max(1.0)
             w_lrmg = (float(strength) * s_ang * s_clip).view(b, 1, 1, 1).to(eps0.dtype)
             delta = _orth(delta, eps0)
             delta = _clip_tr(delta)
-            delta = torch.nan_to_num(delta, nan=0.0, posinf=0.0, neginf=0.0)
             r = (_norm2(delta) / (_norm2(eps0) + 1e-12)).item()
             s_pag = max(smin, min(smax, kappa * r))
-            if state.m is None or state.m.shape != delta.shape or not torch.isfinite(state.m).all():
+            if state.m is None or state.m.shape != delta.shape:
                 state.m = delta.detach()
             else:
                 state.m = state.beta * state.m + (1.0 - state.beta) * delta.detach()
             w_map = w_lrmg * mask.to(eps0.dtype)
-            out = eps0 + w_map * delta + s_pag * state.m
-            out = torch.nan_to_num(out, nan=0.0, posinf=0.0, neginf=0.0)
-            return out
+            return eps0 + w_map * delta + s_pag * state.m
 
         m.set_model_unet_function_wrapper(unet_wrapper)
         return (m,)
