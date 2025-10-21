@@ -24,7 +24,7 @@ The spectral variant adds per-channel seeds and frequency-domain shaping via `be
 
 ### FFT Jitter (fftj)
 
-Improves details by adding tiny jitters to self-attention using an FFT.
+Improves details by adding tiny jitters to self-attention using an FFT. Values above `0.5` may do the opposite.
 
 ---
 
