@@ -1,3 +1,5 @@
+# Flow-Aligned Mask Guidance
+
 import math
 import torch
 import torch.nn.functional as F
