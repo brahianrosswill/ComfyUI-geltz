@@ -30,14 +30,6 @@ Adapts cutoffs and quantiles each step, fits per-band linear maps with EMA clamp
 
 ---
 
-### Regional Split Sampler (rss)
-
-Allows prompting by two regions, more can be defined in file. Splits the image width into left and right regions using a soft mask (center, feather), applies separate positive conditionings to each side, then calls `nodes.common_ksampler` with the chosen sampler/scheduler to generate a `LATENT`.
-
-Registers as `Regional Split Sampler` with inputs for model, seed, steps, cfg, denoise, center, and feather.
-
----
-
 ### Sigma-Weighted Shuffle (sws)
 
 Improves image consistency. Hooks attention, derives a progress variable u from σ or step, scales Q by a temperature τ(u), and uses local Gaussian Sinkhorn transport to stochastically shuffle K and V while keeping the attention distribution within a KL cap.
