@@ -6,6 +6,14 @@ Clamps σ to [sigma_min, sigma_max], falling back to Euler when unavailable or w
 
 ---
 
+### Attention Shuffle Guidance (asg)
+
+Improves consistency of generated images. Hooks PyTorch SDPA to mix window-shuffled attention, runs a guided pass, then nudges the base output using a rescaled and RMS-clamped delta.
+
+Exposes strength and rescale and installs via `set_model_unet_function_wrapper`.
+
+---
+
 ### Cosine-Uniform Scheduler (csu)
 
 Inspired from `sgm_uniform`. Computes a cosine-eased sigma schedule: it maps uniform u∈[0,1] through w=((1−cos(πu))/2)^γ to timesteps, converts to sigmas, enforces strict decrease, caps the first at σ_max, and ends with 0.
