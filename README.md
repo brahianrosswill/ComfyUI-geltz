@@ -24,7 +24,7 @@ The spectral variant adds per-channel seeds and frequency-domain shaping via `be
 
 ### Flow-Aligned Mask Guidance (famg)
 
-Training-free guidance patch that adds motion-aware, long-range masked guidance to UNet diffusion at inference. It estimates coarse latent flow between steps, slides a Hann-window mask along that flow, and applies a localized attention bias only where structure benefits.
+Adds motion-aware, long-range masked guidance to UNet diffusion at inference. It estimates coarse latent flow between steps, slides a Hann-window mask along that flow, and applies a localized attention bias only where structure benefits.
 
 The biased prediction is orthogonalized against the baseline, robust-clipped, angle-scaled, and momentum-blended for stable updates. One control (`strength`) is exposed; all other hyperparameters are fixed in code for reproducible behavior. Inspired by [Sliding Window Guidance](https://arxiv.org/abs/2411.10257).
 
