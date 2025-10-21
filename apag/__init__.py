@@ -42,7 +42,7 @@ class APAGModelPatch:
         return {
             "required": {
                 "model": ("MODEL",),
-                "strength": ("FLOAT", {"default": 0.5, "min": 0.0, "max": 1.0, "step": 0.01}),
+                "strength": ("FLOAT", {"default": 0.25, "min": 0.0, "max": 1.0, "step": 0.01}),
             }
         }
     RETURN_TYPES = ("MODEL",)
