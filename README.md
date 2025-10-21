@@ -2,7 +2,7 @@
 
 Edit of [Perturbed Attention Guidance](https://arxiv.org/pdf/2403.17377). Does two unet passes: one normal and one where the attention values are smoothed by mixing each V with its mean; it then adds `strength ×(clean−perturbed)` as an explicit residual guidance term, by temporarily patching torch’s `scaled_dot_product_attention` and exposing a single global strength.
 
-Original PAG perturbs attention during the forward pass to steer outputs, but typically targets the attention maps. This variant keeps it minimal by perturbing V and turning the delta into guidance.
+Perturbs only the attention values (V) by blending them with their mean: `V_perturbed = (1 - s) × V + s × mean(V)`. Original PAG perturbs attention during the forward pass to steer outputs, but typically targets the attention maps. This variant keeps it minimal by perturbing V and turning the delta into guidance.
 
 ---
 
