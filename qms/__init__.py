@@ -1,3 +1,5 @@
+# Quantile Match Scaling
+
 import torch
 import torch.fft as fft
 from comfy_api.latest import io
@@ -78,6 +80,24 @@ def _fit_linear_map(src_quantiles, tgt_quantiles):
         b = (sum_y - a * sum_x) / n
     return a, b
 
+def _select_indices_for_qs(qs_tensor):
+    q25 = (qs_tensor - 0.25).abs().argmin()
+    q50 = (qs_tensor - 0.50).abs().argmin()
+    q75 = (qs_tensor - 0.75).abs().argmin()
+    return int(q25), int(q50), int(q75)
+
+def _fit_robust_map_from_qs(src_vals, tgt_vals, qs, eps=1e-12):
+    qs_t = torch.tensor(qs, dtype=torch.float32, device=(src_vals[0].device if torch.is_tensor(src_vals[0]) else 'cpu'))
+    src = torch.stack([v if torch.is_tensor(v) else torch.tensor(v, device=qs_t.device) for v in src_vals]).to(qs_t)
+    tgt = torch.stack([v if torch.is_tensor(v) else torch.tensor(v, device=qs_t.device) for v in tgt_vals]).to(qs_t)
+    i25, i50, i75 = _select_indices_for_qs(qs_t)
+    iqr_s = src[i75] - src[i25]
+    iqr_t = tgt[i75] - tgt[i25]
+    safe = torch.where(iqr_s.abs() < eps, torch.tensor(1.0, device=src.device, dtype=src.dtype), iqr_s)
+    a = iqr_t / safe
+    b = tgt[i50] - a * src[i50]
+    return a, b
+
 def _apply_qms(g, a_low, b_low, a_mid, b_mid, a_high, b_high, masks):
     B, C, H, W = g.shape
     g32 = g.float()
@@ -98,11 +118,8 @@ def _apply_qms(g, a_low, b_low, a_mid, b_mid, a_high, b_high, masks):
     g_low_scaled = a_low * g_low + b_low
     g_mid_scaled = a_mid * g_mid + b_mid
     g_high_scaled = a_high * g_high + b_high
-    gf_low_scaled = fft.fft2(g_low_scaled, norm="ortho")
-    gf_mid_scaled = fft.fft2(g_mid_scaled, norm="ortho")
-    gf_high_scaled = fft.fft2(g_high_scaled, norm="ortho")
-    gf_scaled = gf_low_scaled + gf_mid_scaled + gf_high_scaled
-    return _ifft_real(gf_scaled).to(g.dtype)
+    g_scaled = g_low_scaled + g_mid_scaled + g_high_scaled
+    return g_scaled.to(g.dtype)
 
 def _adaptive_ema_params(iteration, total_iterations, base_rho=0.8, base_r=1.2):
     progress = iteration / max(1, total_iterations)
@@ -119,19 +136,24 @@ def _adaptive_freq_cutoffs(h, w, content_complexity=None):
         base_cutoff_high = int(base_cutoff_high * (2 - c))
     return base_cutoff_low, base_cutoff_high
 
-def _adaptive_quantiles(x, num_quantiles=5):
+def _adaptive_quantiles(x, num_quantiles=7):
     x_flat = x.flatten()
     m = torch.mean(x_flat)
     s = torch.std(x_flat)
     if s == 0:
-        return torch.linspace(0.1, 0.9, num_quantiles).tolist()
-    skewness = torch.mean(((x_flat - m) / s) ** 3)
-    if abs(skewness) < 0.1:
-        return torch.linspace(0.1, 0.9, num_quantiles).tolist()
-    elif skewness > 0:
-        return torch.linspace(0.05, 0.85, num_quantiles).tolist()
+        base = torch.linspace(0.1, 0.9, num_quantiles)
     else:
-        return torch.linspace(0.15, 0.95, num_quantiles).tolist()
+        skewness = torch.mean(((x_flat - m) / (s + 1e-12)) ** 3)
+        if abs(skewness) < 0.1:
+            base = torch.linspace(0.1, 0.9, num_quantiles)
+        elif skewness > 0:
+            base = torch.linspace(0.05, 0.85, num_quantiles)
+        else:
+            base = torch.linspace(0.15, 0.95, num_quantiles)
+    extra = torch.tensor([0.25, 0.5, 0.75])
+    all_q = torch.cat([base, extra]).clamp(1e-4, 1 - 1e-4)
+    all_q = torch.unique(all_q).sort().values
+    return [float(v.item()) for v in all_q]
 
 def _dynamic_rescale(cfg_value, base_rescale=0.75):
     if cfg_value <= 3.0:
@@ -141,68 +163,9 @@ def _dynamic_rescale(cfg_value, base_rescale=0.75):
     else:
         return min(base_rescale + 0.2, 0.95)
 
-def _fit_nonlinear_map(src_quantiles, tgt_quantiles, method='cubic'):
-    try:
-        from scipy.interpolate import interp1d
-        import numpy as np
-        src = torch.stack([q if torch.is_tensor(q) else torch.tensor(q) for q in src_quantiles]).cpu().numpy()
-        tgt = torch.stack([q if torch.is_tensor(q) else torch.tensor(q) for q in tgt_quantiles]).cpu().numpy()
-        if method == 'cubic':
-            f = interp1d(src, tgt, kind='cubic', fill_value='extrapolate')
-        else:
-            from scipy.interpolate import PchipInterpolator
-            f = PchipInterpolator(src, tgt)
-        def fn(x):
-            xp = x.detach().cpu().numpy()
-            yp = f(xp)
-            return torch.as_tensor(yp, device=x.device, dtype=x.dtype)
-        return fn
-    except:
-        return None
-
-def _optimized_bandpass(x, masks):
-    low, mid, high = masks
-    g_low = _bandpass_spatial(x, low)
-    g_mid = _bandpass_spatial(x, mid)
-    g_high = _bandpass_spatial(x, high)
-    return g_low, g_mid, g_high
-
-def _process_at_scale(x):
-    return x
-
-def _combine_multiscale_results(results, original_size):
-    return results[-1]
-
-def _multiscale_processing(x, scales=[0.5, 1.0, 2.0]):
-    B, C, H, W = x.shape
-    outs = []
-    for s in scales:
-        if s == 1.0:
-            xs = x
-        else:
-            nh, nw = int(H * s), int(W * s)
-            xs = torch.nn.functional.interpolate(x, size=(nh, nw), mode='bilinear', align_corners=False)
-        outs.append(_process_at_scale(xs))
-    y = _combine_multiscale_results(outs, (H, W))
-    if y.shape[-2:] != (H, W):
-        y = torch.nn.functional.interpolate(y, size=(H, W), mode='bilinear', align_corners=False)
-    return y
-
-def _compute_region_params(cond_region, uncond_region, masks):
-    return None
-
-def _region_aware_scaling(cond, uncond, masks, num_regions=4):
-    B, C, H, W = cond.shape
-    hs, ws = H // num_regions, W // num_regions
-    params = []
-    for i in range(num_regions):
-        for j in range(num_regions):
-            h0, h1 = i * hs, (i + 1) * hs
-            w0, w1 = j * ws, (j + 1) * ws
-            cr = cond[:, :, h0:h1, w0:w1]
-            ur = uncond[:, :, h0:h1, w0:w1]
-            params.append(_compute_region_params(cr, ur, masks))
-    return params
+def _safe_rms(x):
+    x = torch.nan_to_num(x, nan=0.0, posinf=0.0, neginf=0.0)
+    return x.pow(2).mean().sqrt()
 
 class QMS(io.ComfyNode):
     @classmethod
@@ -224,15 +187,23 @@ class QMS(io.ComfyNode):
 
     @classmethod
     def execute(cls, model, rescale):
-        state = {"ema_a_low": None, "ema_b_low": None, "ema_a_mid": None, "ema_b_mid": None, "ema_a_high": None, "ema_b_high": None, "iter": 0, "total": None}
+        state = {
+            "ema_a_low": None, "ema_b_low": None,
+            "ema_a_mid": None, "ema_b_mid": None,
+            "ema_a_high": None, "ema_b_high": None,
+            "iter": 0, "total": None,
+            "mask_key": None, "masks": None
+        }
         def custom_pre_cfg(args):
             conds_out = args["conds_out"]
             if len(conds_out) <= 1 or None in args["conds"][:2]:
                 return conds_out
             cond = conds_out[0]
             uncond = conds_out[1]
-            g = cond - uncond
+            if cond is None or uncond is None:
+                return conds_out
             w = float(args.get("cfg", 1.0))
+            g = cond - uncond
             B, C, H, W = cond.shape
             device = cond.device
             if state["total"] is None:
@@ -244,14 +215,18 @@ class QMS(io.ComfyNode):
                 state["total"] = total
             rho, r = _adaptive_ema_params(state["iter"], state["total"])
             low_cut, high_cut = _adaptive_freq_cutoffs(H, W, None)
-            masks = _freq_masks(H, W, low_cut, high_cut, device)
+            key = (H, W, low_cut, high_cut, device)
+            if state["mask_key"] != key:
+                state["masks"] = _freq_masks(H, W, low_cut, high_cut, device)
+                state["mask_key"] = key
+            masks = state["masks"]
             xcfg_temp = uncond + w * g
-            qs = _adaptive_quantiles(cond, num_quantiles=5)
+            qs = _adaptive_quantiles(cond, num_quantiles=7)
             cond_q = _band_quantiles_safe(cond, masks, 99.9, qs)
             xcfg_q = _band_quantiles_safe(xcfg_temp, masks, 99.9, qs)
-            a_low0, b_low0 = _fit_linear_map(xcfg_q[0], cond_q[0])
-            a_mid0, b_mid0 = _fit_linear_map(xcfg_q[1], cond_q[1])
-            a_high0, b_high0 = _fit_linear_map(xcfg_q[2], cond_q[2])
+            a_low0, b_low0 = _fit_robust_map_from_qs(xcfg_q[0], cond_q[0], qs)
+            a_mid0, b_mid0 = _fit_robust_map_from_qs(xcfg_q[1], cond_q[1], qs)
+            a_high0, b_high0 = _fit_robust_map_from_qs(xcfg_q[2], cond_q[2], qs)
             one = torch.tensor(1.0, device=cond.device, dtype=cond.dtype)
             zero = torch.tensor(0.0, device=cond.device, dtype=cond.dtype)
             rescale_eff = _dynamic_rescale(w, base_rescale=rescale)
@@ -282,7 +257,14 @@ class QMS(io.ComfyNode):
                 a_high = torch.clamp(a_high, state["ema_a_high"] / r, state["ema_a_high"] * r)
                 b_high = torch.clamp(b_high, state["ema_b_high"] / r, state["ema_b_high"] * r)
             g_scaled = _apply_qms(g, a_low, b_low, a_mid, b_mid, a_high, b_high, masks)
+            base_rms = _safe_rms(g)
+            scaled_rms = _safe_rms(g_scaled)
+            cap = 1.0 + 0.5 * rescale_eff
+            scale = torch.clamp(cap * base_rms / (scaled_rms + 1e-12), max=1.0)
+            g_scaled = g_scaled * scale
+            g_scaled = torch.nan_to_num(g_scaled, nan=0.0, posinf=0.0, neginf=0.0)
             cond_new = uncond + g_scaled
+            cond_new = torch.nan_to_num(cond_new, nan=0.0, posinf=0.0, neginf=0.0).to(cond.dtype)
             state["iter"] += 1
             return [cond_new, uncond] + conds_out[2:]
         m = model.clone()
