@@ -12,8 +12,6 @@ Clamps σ to [sigma_min, sigma_max], falling back to Euler when unavailable or w
 
 Improves consistency of generated images. Hooks PyTorch SDPA to mix window-shuffled attention, runs a guided pass, then nudges the base output using a rescaled and RMS-clamped delta.
 
-Exposes strength and rescale and installs via `set_model_unet_function_wrapper`.
-
 ---
 
 ### Cosine-Uniform Scheduler (csu)
@@ -42,7 +40,7 @@ Adapts cutoffs and quantiles each step, fits per-band linear maps with EMA clamp
 
 Perturbs attention by blending locally shuffled keys/values while keeping the attention distribution close to baseline. It derives a normalized progress **u** from log-sigma or step metadata, then scales queries/keys with a temperature factor and estimates entropy on sampled baseline attention to set an adaptive strength.
 
-Builds block-wise cyclic window permutations that shrink as denoising progresses, then selects blend weights via a KL-bounded binary search so changes stay controlled. It handles q/k dim mismatches with orthonormal projections, subsamples tokens for speed, caches projections and permutations, and exposes a single `intensity` slider. 
+Builds block-wise cyclic window permutations that shrink as denoising progresses, then selects blend weights via a KL-bounded binary search so changes stay controlled. It handles q/k dim mismatches with orthonormal projections, subsamples tokens for speed, caches projections and permutations. 
 
 ---
 
