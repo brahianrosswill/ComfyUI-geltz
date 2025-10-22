@@ -16,11 +16,11 @@ Exposes strength and rescale and installs via `set_model_unet_function_wrapper`.
 
 ---
 
-### Cosine-Uniform Scheduler (csu) *
+### Cosine-Uniform Scheduler (csu)
 
 Inspired from `sgm_uniform`. Computes a cosine-eased sigma schedule: it maps uniform u∈[0,1] through w=((1−cos(πu))/2)^γ to timesteps, converts to sigmas, enforces strict decrease, caps the first at σ_max, and ends with 0.
 
-* **Notice**: Currently the `csu` scheduler may randomly output NaNs until Comfy is rebooted, despite flushing sigmas. I am trying to find a fix.
+Currently the `csu` scheduler may randomly output NaNs until Comfy is rebooted, despite flushing sigmas. I am trying to find a fix.
 
 ---
 
@@ -36,15 +36,7 @@ The spectral variant adds per-channel seeds and frequency-domain shaping via `be
 
 Precise rescaling of CFG to prevent oversaturation. Does not affect original structure. Hooks pre-CFG and rescales the guidance g = cond − uncond by matching low, mid, and high frequency quantiles to the conditional.
 
-Adapts cutoffs and quantiles each step, fits per-band linear maps with EMA clamps and a CFG-dependent rescale, applies them in FFT space, and returns cond_new = uncond + g_scaled. 
-
----
-
-### Sigma-Weighted Shuffle (sws)
-
-Improves image consistency. Hooks attention, derives a progress variable u from σ or step, scales Q by a temperature τ(u), and uses local Gaussian Sinkhorn transport to stochastically shuffle K and V while keeping the attention distribution within a KL cap.
-
-Mixing is gated by attention entropy and u, uses EMA-smoothed transport, binary-searches α for K, schedules α for V, infers H×W from sequence length, installs via `set_model_attn2_patch`, and registers the node as SWS. 
+Adapts cutoffs and quantiles each step, fits per-band linear maps with EMA clamps and a CFG-dependent rescale, applies them in FFT space, and returns cond_new = uncond + g_scaled.
 
 ---
 
