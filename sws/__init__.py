@@ -6,12 +6,18 @@ import math
 class SWS:
     @classmethod
     def INPUT_TYPES(cls):
-        return {"required":{"model":("MODEL",),"intensity":("FLOAT",{"default":0.5,"min":0.0,"max":1.0,"step":0.05})}}
+        return {
+            "required": {
+                "model": ("MODEL",),
+                "intensity": ("FLOAT", {"default": 0.5, "min": 0.0, "max": 1.0, "step": 0.05}),
+                "seed": ("INT", {"default": 0, "min": 0, "max": 0xffffffffffffffff}),
+            }
+        }
     RETURN_TYPES=("MODEL",)
     RETURN_NAMES=("model",)
     FUNCTION="patch"
     CATEGORY="model_patches"
-    def patch(self,model,intensity):
+    def patch(self,model,intensity,seed):
         m=model.clone()
         smax=25.0
         smin=0.28
@@ -82,9 +88,10 @@ class SWS:
             key=(df,dt,str(dev))
             P=proj_cache.get(key,None)
             if P is None:
-                torch.manual_seed(df*1000003+dt*9176)
+                # Use user-provided seed instead of deterministic calculation
+                torch.manual_seed(seed + df*1000003 + dt*9176)
                 if dev.type == 'cuda':
-                    torch.cuda.manual_seed_all(df*1000003+dt*9176)
+                    torch.cuda.manual_seed_all(seed + df*1000003 + dt*9176)
                 M=torch.randn(df,dt,device=dev,dtype=torch.float32)
                 U, S, Vh = torch.linalg.svd(M, full_matrices=False)
                 P = U[:, :dt] if df >= dt else Vh[:dt, :].T
