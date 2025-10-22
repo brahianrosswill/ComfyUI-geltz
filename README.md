@@ -22,7 +22,7 @@ Inspired from `sgm_uniform`. Computes a cosine-eased sigma schedule: it maps uni
 
 Flushes sigmas after generating to prevent NaNs. Registers as `csu` within KSampler's scheduler selection.
 
-**Notice**: Currently the csu scheduler may cause NaNs until Comfy is rebooted. I am trying to find a fix.
+**Notice**: Currently the `csu` scheduler may randomly output NaNs until Comfy is rebooted. I am trying to find a fix.
 
 ---
 
