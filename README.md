@@ -20,9 +20,7 @@ Exposes strength and rescale and installs via `set_model_unet_function_wrapper`.
 
 Inspired from `sgm_uniform`. Computes a cosine-eased sigma schedule: it maps uniform u∈[0,1] through w=((1−cos(πu))/2)^γ to timesteps, converts to sigmas, enforces strict decrease, caps the first at σ_max, and ends with 0.
 
-Flushes sigmas after generating to prevent NaNs. Registers as `csu` within KSampler's scheduler selection.
-
-**Notice**: Currently the `csu` scheduler may randomly output NaNs until Comfy is rebooted. I am trying to find a fix.
+**Notice**: Currently the `csu` scheduler may randomly output NaNs until Comfy is rebooted, despite flushing sigmas. I am trying to find a fix.
 
 ---
 
