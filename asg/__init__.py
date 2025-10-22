@@ -4,6 +4,9 @@ import math
 import torch
 import torch.nn.functional as F
 
+def _safe(x):
+    return torch.nan_to_num(x, nan=0.0, posinf=0.0, neginf=0.0)
+
 class _SDPAPerturb:
     def __init__(self, s, window=16):
         self.s = float(s)
@@ -33,6 +36,7 @@ class _SDPAPerturb:
             idx = _window_idx(L, min(w, L), v.device)
             v_shuffled = v.index_select(-2, idx)
             v_pert = (1.0 - s) * v + s * v_shuffled
+            v_pert = _safe(v_pert)
             if q.is_cuda:
                 with torch.backends.cuda.sdp_kernel(enable_flash=True, enable_math=False, enable_mem_efficient=True):
                     return orig(q, k, v_pert, attn_mask=attn_mask, dropout_p=dropout_p, is_causal=is_causal, scale=scale)
@@ -61,38 +65,46 @@ def _coerce_params(params):
 def _eps(unet_apply, params):
     p = _coerce_params(params)
     with torch.no_grad():
-        return unet_apply(x=p["input"], t=p["timestep"], **p["c"])
+        out = unet_apply(x=p["input"], t=p["timestep"], **p["c"])
+    return _safe(out)
 
 
 def _rescale_delta(eps, delta, rescale):
     if rescale <= 0.0:
-        return delta
+        return _safe(delta)
+    eps = _safe(eps)
+    delta = _safe(delta)
     eps_std = eps.std(unbiased=False)
     delta_std = delta.std(unbiased=False)
-    if delta_std > 0:
-        scale_factor = min(1.0, (eps_std / (delta_std + 1e-12)) * rescale)
-        return delta * scale_factor
-    return delta
+    scale_factor = (eps_std / (delta_std + 1e-12)) * float(rescale)
+    scale_factor = torch.nan_to_num(scale_factor, nan=0.0, posinf=1.0, neginf=0.0)
+    scale_factor = float(min(1.0, max(0.0, scale_factor.item() if torch.is_tensor(scale_factor) else scale_factor)))
+    return _safe(delta * scale_factor)
 
 
 def _proj_out(delta, eps):
+    delta = _safe(delta)
+    eps = _safe(eps)
     dims = tuple(range(1, delta.ndim))
     num = (delta * eps).sum(dim=dims, keepdim=True)
     den = (eps * eps).sum(dim=dims, keepdim=True).clamp_min(1e-12)
-    return delta - (num / den) * eps
+    proj = delta - (num / den) * eps
+    return _safe(proj)
 
 
 def _rms(x):
+    x = _safe(x).float()
     dims = tuple(range(1, x.ndim))
-    return x.float().pow(2).mean(dim=dims, keepdim=True).sqrt()
+    return _safe(x.pow(2).mean(dim=dims, keepdim=True).sqrt())
 
 
 def _rms_clamp(delta, ref, tau=1.0):
     ref_r = _rms(ref)
     del_r = _rms(delta)
-    gain = (tau * ref_r) / (del_r + 1e-12)
+    gain = (float(tau) * ref_r) / (del_r + 1e-12)
+    gain = torch.nan_to_num(gain, nan=0.0, posinf=1.0, neginf=0.0)
     gain = gain.clamp(max=1.0)
-    return delta * gain
+    return _safe(delta * gain)
 
 
 def _apply_asg(unet_apply, params, s, rescale):
@@ -109,11 +121,12 @@ def _apply_asg(unet_apply, params, s, rescale):
     with _SDPAPerturb(s, window=16):
         guided = _eps(unet_apply, params)
 
-    delta = base - guided
+    delta = _safe(base - guided)
     delta = _rescale_delta(base, delta, rescale)
     delta = _proj_out(delta, base)
     delta = _rms_clamp(delta, base, tau=1.0)
-    return base + s * delta
+    out = _safe(base + s * delta)
+    return out
 
 
 class _ASGWrapper:
