@@ -26,15 +26,7 @@ Inspired from `sgm_uniform`. Computes a cosine-eased sigma schedule: it maps uni
 
 Improves empty latents. Adds two latent initializers, `DIL_EmptyLatent` and `DIL2_EmptyLatent`, that start from noise and iteratively ascend a differentiable score based on edges, high-frequency energy, kurtosis, and orientation coherence, with normalization and dithering to return a `LATENT`.
 
-The spectral variant adds per-channel seeds and frequency-domain shaping via `beta` and `spectral_mix`, and the file includes the gradient, blur, FFT, dtype/device, and node-registration utilities. 
-
----
-
-### Fast Sigma Shuffle (fss)
-
-Stabilizes diffusion inference with an `attn2` hook via `set_model_attn2_patch`. Derives a per-step progress `u` from `sigma` or step metadata, with a cyclic fallback when missing. Infers spatial `H×W` from metadata or token count for attention token grids.  
-
-Builds three shift patterns per step and mixes rolled keys/values to create spatial permutations. Temperature-scales `q,k` by `u`, then nudges `k,v` toward the permutations with cosine gating, RMS-based scaling, norm preservation, and per-step caps.
+The spectral variant adds per-channel seeds and frequency-domain shaping via `beta` and `spectral_mix`, and the file includes the gradient, blur, FFT, dtype/device, and node-registration utilities.
 
 ---
 
