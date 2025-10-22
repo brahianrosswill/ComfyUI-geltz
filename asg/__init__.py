@@ -8,24 +8,30 @@ def _safe(x):
     return torch.nan_to_num(x, nan=0.0, posinf=0.0, neginf=0.0)
 
 class _SDPAPerturb:
-    def __init__(self, s, window=16):
+    def __init__(self, s, window=16, seed=42):
         self.s = float(s)
         self.window = int(max(1, window))
+        self.seed = seed
         self._orig = None
 
     def __enter__(self):
         self._orig = F.scaled_dot_product_attention
         s = self.s
         w = self.window
+        seed = self.seed
         orig = self._orig
 
         def _window_idx(L, win, device):
             if L <= 1 or win <= 1:
                 return torch.arange(L, device=device)
+            # Create a seeded generator for deterministic shuffling
+            generator = torch.Generator(device=device)
+            generator.manual_seed(seed)
+            
             idx_parts = []
             for start in range(0, L, win):
                 end = min(start + win, L)
-                seg = torch.randperm(end - start, device=device) + start
+                seg = torch.randperm(end - start, generator=generator, device=device) + start
                 idx_parts.append(seg)
             return torch.cat(idx_parts, dim=0)
 
@@ -107,7 +113,7 @@ def _rms_clamp(delta, ref, tau=1.0):
     return _safe(delta * gain)
 
 
-def _apply_asg(unet_apply, params, s, rescale):
+def _apply_asg(unet_apply, params, s, rescale, seed):
     s = float(s)
     if not math.isfinite(s):
         s = 0.0
@@ -118,7 +124,7 @@ def _apply_asg(unet_apply, params, s, rescale):
     rescale = max(0.0, rescale)
 
     base = _eps(unet_apply, params)
-    with _SDPAPerturb(s, window=16):
+    with _SDPAPerturb(s, window=16, seed=seed):
         guided = _eps(unet_apply, params)
 
     delta = _safe(base - guided)
@@ -130,12 +136,13 @@ def _apply_asg(unet_apply, params, s, rescale):
 
 
 class _ASGWrapper:
-    def __init__(self, strength, rescale):
+    def __init__(self, strength, rescale, seed):
         self.s = float(strength)
         self.rescale = float(rescale)
+        self.seed = seed
 
     def __call__(self, unet_apply, params):
-        return _apply_asg(unet_apply, params, self.s, self.rescale)
+        return _apply_asg(unet_apply, params, self.s, self.rescale, self.seed)
 
 
 class AttentionShuffleGuidanceModelPatch:
@@ -146,6 +153,7 @@ class AttentionShuffleGuidanceModelPatch:
                 "model": ("MODEL",),
                 "strength": ("FLOAT", {"default": 0.25, "min": 0.0, "max": 2.0, "step": 0.01}),
                 "rescale": ("FLOAT", {"default": 0.5, "min": 0.0, "max": 1.0, "step": 0.01}),
+                "seed": ("INT", {"default": 42, "min": 0, "max": 0xffffffffffffffff}),
             }
         }
 
@@ -153,9 +161,9 @@ class AttentionShuffleGuidanceModelPatch:
     FUNCTION = "patch"
     CATEGORY = "model/patches"
 
-    def patch(self, model, strength, rescale):
+    def patch(self, model, strength, rescale, seed):
         m = model.clone()
-        m.set_model_unet_function_wrapper(_ASGWrapper(strength, rescale))
+        m.set_model_unet_function_wrapper(_ASGWrapper(strength, rescale, seed))
         return (m,)
 
 
