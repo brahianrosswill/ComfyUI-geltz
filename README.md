@@ -38,6 +38,12 @@ Adapts cutoffs and quantiles each step, fits per-band linear maps with EMA clamp
 
 ---
 
+### Sigma-Weighted Shuffle (sws)
+
+(add description here)
+
+---
+
 ### tokenteller
 
 Useful to detect "prompt bleed". Parses conditioning to gather up to `limit_streams` token embeddings, derives a per-token value by norm/var/mean normalized to [0,1], and assigns word labels from prompt-like fields or indices.
