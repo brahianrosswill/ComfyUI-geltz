@@ -32,6 +32,14 @@ The spectral variant adds per-channel seeds and frequency-domain shaping via `be
 
 ---
 
+### Fast Sigma Shuffle (fss)
+
+Stabilizes diffusion inference with an `attn2` hook via `set_model_attn2_patch`. Derives a per-step progress `u` from `sigma` or step metadata, with a cyclic fallback when missing. Infers spatial `H×W` from metadata or token count for attention token grids.  
+
+Builds three shift patterns per step and mixes rolled keys/values to create spatial permutations. Temperature-scales `q,k` by `u`, then nudges `k,v` toward the permutations with cosine gating, RMS-based scaling, norm preservation, and per-step caps.
+
+---
+
 ### Quantile Match Scaling (qms)
 
 Precise rescaling of CFG to prevent oversaturation. Does not affect original structure. Hooks pre-CFG and rescales the guidance g = cond − uncond by matching low, mid, and high frequency quantiles to the conditional.
