@@ -82,13 +82,14 @@ class SWS:
             key=(df,dt,str(dev))
             P=proj_cache.get(key,None)
             if P is None:
-                g=torch.Generator(device=dev)
-                g.manual_seed(df*1000003+dt*9176)
-                M=torch.randn(df,dt,device=dev,generator=g,dtype=torch.float32)
-                Q,_=torch.linalg.qr(M,mode='reduced')
-                if Q.shape[1]!=dt:
-                    Q=torch.nn.functional.pad(Q,(0,dt-Q.shape[1]))
-                P=Q
+                torch.manual_seed(df*1000003+dt*9176)
+                if dev.type == 'cuda':
+                    torch.cuda.manual_seed_all(df*1000003+dt*9176)
+                M=torch.randn(df,dt,device=dev,dtype=torch.float32)
+                U, S, Vh = torch.linalg.svd(M, full_matrices=False)
+                P = U[:, :dt] if df >= dt else Vh[:dt, :].T
+                if P.shape != (df, dt):
+                    P = torch.nn.functional.pad(P, (0, dt-P.shape[1])) if P.shape[1] < dt else P[:, :dt]
                 proj_cache[key]=P
             return P
         def baseline_attn(q,k,sample_state=None,sample_max_q=384,sample_max_k=384):
