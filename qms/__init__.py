@@ -181,7 +181,7 @@ class QMS(io.ComfyNode):
             description="Tames CFG overdrive by matching per-band quantile distributions to the conditional.",
             inputs=[
                 io.Model.Input("model"),
-                io.Float.Input("rescale", default=0.75, min=0.0, max=1.0, step=0.01),
+                io.Float.Input("rescale", default=0.75, min=0.0, max=1.0, step=0.05),
             ],
             outputs=[
                 io.Model.Output(),
