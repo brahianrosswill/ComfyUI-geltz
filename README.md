@@ -59,3 +59,9 @@ Inspired by [Token Perturbation Guidance](https://github.com/TaatiTeam/Token-Per
 Strengthens prompt adherence by refining token embeddings. Nudges each CLIP token embedding toward a soft top-k neighbor blend using entropy and attention-scaled trust-region optimization with KL bounds and angle constraints.
 
 Inspired by [Vector Sculptor](https://github.com/Extraltodeus/Vector_Sculptor_ComfyUI).
+
+---
+
+### Velocity Scaling (vs)
+
+Modification of the Epsilon Scaling algorithm found in [Elucidating the Exposure Bias in Diffusion Models](https://arxiv.org/abs/2308.15321) specifically made for v-prediction models.
