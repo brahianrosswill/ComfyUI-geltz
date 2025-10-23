@@ -202,7 +202,7 @@ class AttentionShuffleGuidanceModelPatch:
             "required": {
                 "model": ("MODEL",),
                 "strength": ("FLOAT", {"default": 0.25, "min": 0.0, "max": 2.0, "step": 0.05}),
-                "rescale": ("FLOAT", {"default": 0.5, "min": 0.0, "max": 1.0, "step": 0.01}),
+                "rescale": ("FLOAT", {"default": 0.5, "min": 0.0, "max": 1.0, "step": 0.05}),
                 "seed": ("INT", {"default": 42, "min": 0, "max": 0xffffffffffffffff}),
             }
         }
