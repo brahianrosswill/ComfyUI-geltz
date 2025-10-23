@@ -40,7 +40,7 @@ class TWS:
         return {
             "required": {
                 "model": ("MODEL",),
-                "intensity": ("FLOAT", {"default": 0.55, "min": 0.0, "max": 1.0, "step": 0.05}),
+                "intensity": ("FLOAT", {"default": 0.6, "min": 0.0, "max": 1.0, "step": 0.05}),
                 "seed": ("INT", {"default": 0, "min": 0, "max": 0xffffffffffffffff}),
             }
         }
@@ -53,7 +53,7 @@ class TWS:
         m = model.clone()
         proj_cache = LRU(64)
         sketch_proj_cache = LRU(32)
-        mix_cache = LRU(64)
+        perm_cache = LRU(128)
 
         def _orth_proj(df, dt, dev):
             key = (df, dt, _dev_key(dev))
@@ -66,7 +66,7 @@ class TWS:
                 proj_cache.put(key, P)
             return P
 
-        def _sketch_proj(d, k, dev):
+        def _sketch_proj(d, dev):
             key = (d, 64, _dev_key(dev))
             R = sketch_proj_cache.get(key)
             if R is None:
@@ -77,7 +77,7 @@ class TWS:
                 sketch_proj_cache.put(key, R)
             return R
 
-        def baseline_attn(q, k, sample_max_q=384, sample_max_k=512):
+        def baseline_attn(q, k, sample_max_q=512, sample_max_k=512):
             if q.dim() == 4:
                 q = q.reshape(q.shape[0] * q.shape[1], q.shape[2], q.shape[3])
             if k.dim() == 4:
@@ -116,65 +116,81 @@ class TWS:
                 probs = logits.softmax(dim=-1)
             return probs
 
-        def kl_guard(P1, P0):
+        def kl_per_head(P1, P0):
             eps = 1e-8
             P0c = P0.clamp_min(eps).float()
             P1c = P1.clamp_min(eps).float()
-            KL = (P1c * (P1c.log() - P0c.log())).sum(dim=-1).mean(dim=(-1, -2))
-            return KL.mean()
+            KL = (P1c * (P1c.log() - P0c.log())).sum(dim=-1).mean(dim=-1)
+            return KL
 
-        def bsearch_alpha_k(q, k, A0, k_mix, a_max, kl_cap, steps=7, tol=5e-4, kl_tol=2e-4):
-            lo = 0.0
-            hi = float(max(0.0, min(1.0, a_max)))
-            best = 0.0
-            cap = A0.new_tensor(float(kl_cap))
+        def bsearch_alpha_vec_mix_k(q, k_ref, A0, k_new, max_a_vec, kl_cap, steps=6):
+            dev = q.device
+            B = q.shape[0]
+            lo = torch.zeros(B, device=dev, dtype=torch.float32)
+            hi = max_a_vec.to(torch.float32).clamp(0.0, 1.0)
             for _ in range(steps):
-                if hi - lo <= tol:
-                    break
                 mid = 0.5 * (lo + hi)
-                k_try = (1.0 - mid) * k + mid * k_mix
-                A1 = baseline_attn(q, k_try)
-                kl = kl_guard(A1, A0)
-                if (kl - cap).abs() <= kl_tol:
-                    best = mid
-                    break
-                if kl > cap:
-                    hi = mid
-                else:
-                    best = mid
-                    lo = mid
-            return best
+                k_try = (1.0 - mid.view(B, 1, 1)) * k_ref + mid.view(B, 1, 1) * k_new
+                A1 = baseline_attn(q, k_try, sample_max_q=q.shape[1], sample_max_k=k_try.shape[1])
+                kl = kl_per_head(A1, A0)
+                too_high = kl > float(kl_cap)
+                hi = torch.where(too_high, mid, hi)
+                lo = torch.where(~too_high, mid, lo)
+            return lo.clamp(0.0, 1.0)
 
-        def rescale_match(x_new, x_ref, eps=1e-6):
-            mu0 = x_ref.mean(dim=1, keepdim=True)
-            std0 = x_ref.std(dim=1, keepdim=True).clamp_min(eps)
-            mu1 = x_new.mean(dim=1, keepdim=True)
-            std1 = x_new.std(dim=1, keepdim=True).clamp_min(eps)
-            return (x_new - mu1) * (std0 / std1) + mu0
+        def bsearch_alpha_vec_mix_q(q_ref, k_fixed, A0, q_new, max_a_vec, kl_cap, steps=6):
+            dev = q_ref.device
+            B = q_ref.shape[0]
+            lo = torch.zeros(B, device=dev, dtype=torch.float32)
+            hi = max_a_vec.to(torch.float32).clamp(0.0, 1.0)
+            for _ in range(steps):
+                mid = 0.5 * (lo + hi)
+                q_try = (1.0 - mid.view(B, 1, 1)) * q_ref + mid.view(B, 1, 1) * q_new
+                A1 = baseline_attn(q_try, k_fixed, sample_max_q=q_try.shape[1], sample_max_k=k_fixed.shape[1])
+                kl = kl_per_head(A1, A0)
+                too_high = kl > float(kl_cap)
+                hi = torch.where(too_high, mid, hi)
+                lo = torch.where(~too_high, mid, lo)
+            return lo.clamp(0.0, 1.0)
 
-        def orthogonal_noise(x, g, strength, seed_tag):
+        def rms(x, dim=-1, keepdim=True, eps=1e-6):
+            return (x.float().pow(2).mean(dim=dim, keepdim=keepdim).add(eps).sqrt())
+
+        def rms_match(x_new, x_ref, eps=1e-6):
+            r_ref = rms(x_ref, dim=-1, keepdim=True, eps=eps)
+            r_new = rms(x_new, dim=-1, keepdim=True, eps=eps)
+            s = (r_ref / r_new).to(x_new.dtype)
+            return x_new * s
+
+        def clamp_rms(delta, factor=5.0, eps=1e-6):
+            r = rms(delta, dim=-1, keepdim=True, eps=eps).squeeze(-1)
+            med = r.median(dim=1, keepdim=True).values
+            tau = (factor * med).clamp_min(eps)
+            scale = (tau / r).clamp_max(1.0).unsqueeze(-1)
+            return (delta.float() * scale).to(delta.dtype)
+
+        def orthogonal_noise(x, g, strength, tag):
             B, S, D = x.shape
             dev = x.device
             gen = torch.Generator(device=dev)
-            gen.manual_seed(_stable_seed(seed, D, S, seed_tag, _dev_key(dev)))
-            n = torch.randn(x.shape, dtype=x.dtype, device=dev, generator=gen)
-            proj = (n * x).sum(-1, keepdim=True) / (x.norm(dim=-1, keepdim=True).clamp_min(1e-6) ** 2)
-            n_ortho = n - proj * x
+            gen.manual_seed(_stable_seed(seed, D, S, tag, _dev_key(dev)))
+            n = torch.randn(x.shape, dtype=torch.float32, device=dev, generator=gen)
+            x_f = x.float()
+            proj = (n * x_f).sum(-1, keepdim=True) / x_f.norm(dim=-1, keepdim=True).clamp_min(1e-6).pow(2)
+            n_ortho = n - proj * x_f
             n_ortho = n_ortho / n_ortho.norm(dim=-1, keepdim=True).clamp_min(1e-6)
-            s = strength * g.view(B, S, 1)
-            return x + s * n_ortho
+            s = strength * (g.view(B, S, 1).float().add(1e-8).sqrt())
+            out = x_f + s * n_ortho
+            return out.to(x.dtype)
 
-        def alpha_from_entropy(A, intensity):
-            eps = 1e-12
+        def alpha_base_from_entropy(A, gamma=0.7, eps=1e-8):
             Ac = A.clamp_min(eps)
-            H = -(Ac * Ac.log()).sum(dim=-1)
-            h = H.mean(dim=(-1, -2), keepdim=True)
-            hmin = H.amin(dim=(-1, -2), keepdim=True)
-            hmax = H.amax(dim=(-1, -2), keepdim=True).clamp_min(hmin + 1e-6)
-            z = ((h - hmin) / (hmax - hmin)).squeeze()
-            z = torch.nan_to_num(z, nan=0.0).clamp(0, 1)
-            a = z.mean() * float(intensity)
-            return float(a.item())
+            H = -(Ac * Ac.log()).sum(dim=-1).mean(dim=-1)
+            hmin = H.amin(dim=0, keepdim=True)
+            hmax = H.amax(dim=0, keepdim=True).clamp_min(hmin + 1e-6)
+            u = ((H - hmin) / (hmax - hmin)).clamp(0, 1)
+            z = 1.0 - u
+            return (z + eps).pow(gamma)
 
         def importance_from_A(A):
             I = A.mean(dim=1)
@@ -182,87 +198,42 @@ class TWS:
             c = I.amax(dim=-1).mean()
             return I, float(c.item())
 
-        def _content_key(k, intensity):
-            B, S, D = k.shape
-            dev = k.device
-            kn = k.float()
-            kn = kn / kn.norm(dim=-1, keepdim=True).clamp_min(1e-6)
-            R = _sketch_proj(D, k, dev)
-            s = torch.matmul(kn, R) if kn.dtype != torch.float16 else torch.matmul(kn.float(), R)
-            s = s.mean(dim=1).mean(dim=0)
-            q = torch.round(s * 256.0).to(torch.int16).tolist()
-            return (S, round(float(intensity), 3), _dev_key(dev), tuple(q))
+        def importance_queries_from_A(A):
+            R = A.max(dim=-1).values
+            R = R / R.sum(dim=-1, keepdim=True).clamp_min(1e-6)
+            return R
 
-        def _mix_tokens_banded_topk(k, v, intensity):
-            B, S, D = k.shape
-            dev = k.device
-            key = _content_key(k, intensity)
-            cached = mix_cache.get(key)
-            if cached is not None:
-                idx_top, w_top = cached
-                topk = idx_top.shape[-1]
-                k_exp2 = k.unsqueeze(2).expand(-1, -1, topk, -1)
-                v_exp2 = v.unsqueeze(2).expand(-1, -1, topk, -1)
-                idx4k = idx_top.unsqueeze(-1).expand(-1, -1, -1, D)
-                idx4v = idx_top.unsqueeze(-1).expand(-1, -1, -1, v.shape[-1])
-                gathered_k = torch.gather(k_exp2, 1, idx4k)
-                gathered_v = torch.gather(v_exp2, 1, idx4v)
-                k_mix = (w_top.unsqueeze(-1) * gathered_k).sum(dim=2)
-                v_mix = (w_top.unsqueeze(-1) * gathered_v).sum(dim=2)
-                return k_mix, v_mix
-            kn = k.float()
-            kn = kn / kn.norm(dim=-1, keepdim=True).clamp_min(1e-6)
-            r_base = 4 + int(S * (0.01 + 0.04 * float(intensity)))
-            r = int(max(2, min(S // 4, r_base)))
-            W = 2 * r + 1
-            offs = torch.arange(-r, r + 1, device=dev)
-            center = torch.arange(S, device=dev).unsqueeze(1)
-            neigh = center + offs.unsqueeze(0)
-            mask = (neigh >= 0) & (neigh < S)
-            neigh_clamped = neigh.clamp(0, S - 1)
-            idx_exp = neigh_clamped.unsqueeze(0).expand(B, -1, -1)
-            kn_exp = kn.unsqueeze(2).expand(-1, -1, W, -1)
-            gather_idx = idx_exp.unsqueeze(-1).expand(-1, -1, -1, D)
-            neigh_vecs = torch.gather(kn_exp, 1, gather_idx)
-            sims = (kn_exp * neigh_vecs).sum(-1)
-            sims = sims.masked_fill(~mask.unsqueeze(0), float("-inf"))
-            dist_w = 0.25 + 0.75 * float(intensity)
-            bias = -(offs.abs().float() / max(float(S), 1.0)) * dist_w
-            sims = sims + bias.view(1, 1, W)
-            sims = sims.masked_fill(offs.view(1, 1, W) == 0, float("-inf"))
+        def _perm_indices(S, intensity, phase, dev):
+            ib = round(100 * float(intensity))
+            pb = round(100 * float(phase))
+            key = (S, ib, pb, _dev_key(dev))
+            p = perm_cache.get(key)
+            if p is not None:
+                return p
             gen = torch.Generator(device=dev)
-            gen.manual_seed(_stable_seed(seed, "mix", S, D, _dev_key(dev)))
-            noise = torch.randn(sims.shape, dtype=sims.dtype, device=sims.device, generator=gen) * (0.02 + 0.08 * float(intensity))
-            sims = sims + noise
-            temp = max(0.25, 0.7 - 0.25 * float(intensity))
-            topk_val = min(W, 8 + int(8 * float(intensity)))
-            vals, idx_inW = sims.topk(k=topk_val, dim=-1)
-            w_top = (vals / temp).softmax(dim=-1)
-            BS = B * S
-            idx_exp_flat = idx_exp.reshape(BS, W)
-            idx_inW_flat = idx_inW.reshape(BS, topk_val)
-            idx_top_flat = torch.gather(idx_exp_flat, 1, idx_inW_flat)
-            idx_top = idx_top_flat.reshape(B, S, topk_val)
-            k_exp2 = k.unsqueeze(2).expand(-1, -1, topk_val, -1)
-            v_exp2 = v.unsqueeze(2).expand(-1, -1, topk_val, -1)
-            idx4k = idx_top.unsqueeze(-1).expand(-1, -1, -1, D)
-            idx4v = idx_top.unsqueeze(-1).expand(-1, -1, -1, v.shape[-1])
-            gathered_k = torch.gather(k_exp2, 1, idx4k)
-            gathered_v = torch.gather(v_exp2, 1, idx4v)
-            k_mix = (w_top.unsqueeze(-1) * gathered_k).sum(dim=2)
-            v_mix = (w_top.unsqueeze(-1) * gathered_v).sum(dim=2)
-            mix_cache.put(key, (idx_top, w_top))
-            return k_mix, v_mix
+            gen.manual_seed(_stable_seed(seed, S, ib, pb, "perm", _dev_key(dev)))
+            pos = torch.arange(S, device=dev, dtype=torch.float32)
+            sigma = max(1.0, float(S) * (0.08 + 0.28 * float(intensity)) * (phase ** 0.5))
+            noise = torch.randn(S, device=dev, dtype=torch.float32, generator=gen) * sigma
+            idx = torch.argsort(pos + noise, dim=0)
+            perm_cache.put(key, idx)
+            return idx
 
-        def _entropy_head_mask(A, thr):
+        def _shuffle_tokens(k, v, intensity, phase):
+            B, S, D = k.shape
+            dev = k.device
+            idx = _perm_indices(S, intensity, phase, dev)
+            k_perm = k.index_select(1, idx)
+            v_perm = v.index_select(1, idx)
+            return k_perm, v_perm
+
+        def _entropy_head_mask_percentile(A, intensity):
             eps = 1e-12
             Ac = A.clamp_min(eps)
             H = -(Ac * Ac.log()).sum(dim=-1).mean(dim=-1)
-            hmin = H.amin(dim=0, keepdim=True)
-            hmax = H.amax(dim=0, keepdim=True).clamp_min(hmin + 1e-6)
-            z = (H - hmin) / (hmax - hmin)
-            z = torch.nan_to_num(z, nan=0.0).clamp(0, 1)
-            return z >= thr
+            q = 1.0 - (0.15 + 0.55 * float(intensity))
+            thr = torch.quantile(H.float(), q)
+            return H <= thr
 
         def tws(q, k, v, extra):
             if q.dim() == 4:
@@ -271,43 +242,91 @@ class TWS:
                 k = k.reshape(k.shape[0] * k.shape[1], k.shape[2], k.shape[3])
             if v.dim() == 4:
                 v = v.reshape(v.shape[0] * v.shape[1], v.shape[2], v.shape[3])
-            A0 = baseline_attn(q, k)
-            a_base = alpha_from_entropy(A0, intensity)
+
+            A0 = baseline_attn(q, k, sample_max_q=q.shape[1], sample_max_k=k.shape[1])
             B, S, _ = k.shape
-            thr = 0.35 + 0.4 * float(intensity)
-            mask = _entropy_head_mask(A0, thr)
+            mask = _entropy_head_mask_percentile(A0, intensity)
             if not mask.any():
-                return q, k, v
+                mask = torch.ones_like(mask, dtype=torch.bool)
             idx = mask.nonzero(as_tuple=True)[0]
+
+            q_sel = q.index_select(0, idx)
             k_sel = k.index_select(0, idx)
             v_sel = v.index_select(0, idx)
-            q_sel = q.index_select(0, idx)
-            k_mix_sel, v_mix_sel = _mix_tokens_banded_topk(k_sel, v_sel, intensity)
-            k_mix_sel = rescale_match(k_mix_sel, k_sel)
-            v_mix_sel = rescale_match(v_mix_sel, v_sel)
-            I, conc = importance_from_A(A0.index_select(0, idx))
-            noise_k_strength = 0.15 * float(intensity) * (0.5 + 0.5 * conc)
-            noise_v_strength = 0.25 * float(intensity) * (0.5 + 0.5 * conc)
-            k_mix_sel = orthogonal_noise(k_mix_sel, I, noise_k_strength, "k")
-            v_mix_sel = orthogonal_noise(v_mix_sel, I, noise_v_strength, "v")
-            kl_cap = 0.05 + 0.25 * float(intensity)
-            a_k_max = min(0.95, 0.35 + 0.55 * float(intensity))
-            A0_sel = baseline_attn(q_sel, k_sel)
-            a_k = bsearch_alpha_k(q_sel, k_sel, A0_sel, k_mix_sel, a_k_max * max(0.05, a_base), kl_cap, steps=5)
-            a_v = max(0.0, min(1.0, (0.5 + 0.5 * conc) * (0.55 + 0.45 * float(intensity)) * max(0.1, a_base)))
-            k_mix_sel = k_mix_sel.to(k.dtype)
-            v_mix_sel = v_mix_sel.to(v.dtype)
-            k_sel = k_sel.to(k.dtype)
-            v_sel = v_sel.to(v.dtype)
+
+            t = float(extra.get("timestep", 0))
+            T = float(extra.get("total_timesteps", max(t, 1)))
+            phase = 1.0 - (t / T)
+
+            A0_sel = baseline_attn(q_sel, k_sel, sample_max_q=q_sel.shape[1], sample_max_k=k_sel.shape[1])
+            a_base_vec = alpha_base_from_entropy(A0_sel)
+            I_k, conc = importance_from_A(A0_sel)
+
+            p = 0.35 + 0.55 * float(intensity)
+            k_tokens = max(1, int(math.ceil(p * S)))
+            top_vals_k, top_idx_k = I_k.topk(k_tokens, dim=-1, largest=True, sorted=False)
+            gate_k = torch.zeros_like(I_k, dtype=torch.bool)
+            gate_k.scatter_(1, top_idx_k, True)
+
+            k_perm, v_perm = _shuffle_tokens(k_sel, v_sel, intensity, phase)
+            k_mix = rms_match(k_perm, k_sel)
+            v_mix = rms_match(v_perm, v_sel)
+
+            noise_k_strength = 0.35 * float(intensity) * (0.5 + 0.5 * conc) * (phase ** 0.25)
+            noise_v_strength = 0.55 * float(intensity) * (0.5 + 0.5 * conc) * (phase ** 0.25)
+            k_mix = orthogonal_noise(k_mix, I_k, noise_k_strength, "k")
+            v_mix = orthogonal_noise(v_mix, I_k, noise_v_strength, "v")
+
+            kl_cap = 2.4 * (0.18 + 0.42 * float(intensity)) * (phase ** 0.3)
+            a_k_max = min(0.995, 0.65 + 0.7 * float(intensity))
+            cap_scale = a_base_vec.clamp_min(0.08).clamp_max(1.0).to(torch.float32)
+            a_k_vec = bsearch_alpha_vec_mix_k(q_sel, k_sel, A0_sel, k_mix, cap_scale * a_k_max, kl_cap, steps=6)
+
+            a_v_base = 1.8 * ((0.8 + 0.6 * float(intensity)) * (0.5 + 0.5 * conc))
+            a_v_vec = (a_v_base * cap_scale * (a_k_vec / (cap_scale * a_k_max + 1e-6))).clamp(0.0, 1.0)
+
+            dk = clamp_rms(k_mix - k_sel)
+            dv = clamp_rms(v_mix - v_sel)
+
+            a_k_tok = (a_k_vec.view(-1, 1) * gate_k.float()).unsqueeze(-1).to(k_sel.dtype)
+            a_v_tok = (a_v_vec.view(-1, 1) * gate_k.float()).unsqueeze(-1).to(v_sel.dtype)
+
+            k_new_sel = (k_sel + a_k_tok * dk).to(k_sel.dtype)
+            v_new_sel = (v_sel + a_v_tok * dv).to(v_sel.dtype)
+
+            A0_fullQ = baseline_attn(q_sel, k_sel, sample_max_q=q_sel.shape[1], sample_max_k=k_sel.shape[1])
+            I_q = importance_queries_from_A(A0_fullQ)
+            Tq = q_sel.shape[1]
+            q_tokens = max(1, int(math.ceil(p * Tq)))
+            top_vals_q, top_idx_q = I_q.topk(q_tokens, dim=-1, largest=True, sorted=False)
+            gate_q = torch.zeros_like(I_q, dtype=torch.bool)
+            gate_q.scatter_(1, top_idx_q, True)
+
+            q_perm, _ = _shuffle_tokens(q_sel, q_sel, intensity * 0.8, phase)
+            q_mix = rms_match(q_perm, q_sel)
+            q_mix = orthogonal_noise(q_mix, I_q, 0.5 * noise_k_strength, "q")
+
+            kl_cap_q = 0.55 * kl_cap
+            a_q_max = 0.55 * a_k_max
+            if conc < 0.2:
+                a_q_vec = torch.zeros(q_sel.shape[0], device=q_sel.device, dtype=torch.float32)
+            else:
+                a_q_vec = bsearch_alpha_vec_mix_q(q_sel, k_sel, A0_fullQ, q_mix, cap_scale * a_q_max, kl_cap_q, steps=5)
+
+            dq = clamp_rms(q_mix - q_sel)
+            a_q_tok = (0.85 * a_q_vec.view(-1, 1) * gate_q.float()).unsqueeze(-1).to(q_sel.dtype)
+            q_new_sel = (q_sel + a_q_tok * dq).to(q_sel.dtype)
+
+            q_out = q.clone()
             k_out = k.clone()
             v_out = v.clone()
-            k_out.index_copy_(0, idx, ((1.0 - a_k) * k_sel + a_k * k_mix_sel).to(k_out.dtype))
-            v_out.index_copy_(0, idx, ((1.0 - a_v) * v_sel + a_v * v_mix_sel).to(v_out.dtype))
-            return q, k_out, v_out
+            q_out.index_copy_(0, idx, q_new_sel.to(q_out.dtype))
+            k_out.index_copy_(0, idx, k_new_sel.to(k_out.dtype))
+            v_out.index_copy_(0, idx, v_new_sel.to(v_out.dtype))
+            return q_out, k_out, v_out
 
         m.set_model_attn2_patch(tws)
         return (m,)
 
 NODE_CLASS_MAPPINGS = {"TWS": TWS}
 NODE_DISPLAY_NAME_MAPPINGS = {"TWS": "Token-Weighted Shuffle"}
-    
