@@ -1,45 +1,66 @@
 # Attention Shuffle Guidance
 
 import math
+from collections import OrderedDict
 import torch
 import torch.nn.functional as F
 
 def _safe(x):
     return torch.nan_to_num(x, nan=0.0, posinf=0.0, neginf=0.0)
 
+_GLOBAL_INDEX_CACHE = OrderedDict()
+_GLOBAL_INDEX_CACHE_CAP = 64
+
+def _device_key(t):
+    d = t.device
+    if d.type == "cuda":
+        return ("cuda", d.index)
+    return (d.type, None)
+
+def _dynamic_window(L):
+    return int(max(1, round(L ** 0.5)))
+
+def _cached_window_idx(L, win, seed, device):
+    key = ("idx", int(L), int(win), int(seed), _device_key(torch.empty(0, device=device)))
+    if key in _GLOBAL_INDEX_CACHE:
+        _GLOBAL_INDEX_CACHE.move_to_end(key)
+        return _GLOBAL_INDEX_CACHE[key]
+    if L <= 1 or win <= 1:
+        idx = torch.arange(L, device=device)
+    else:
+        g = torch.Generator(device=device)
+        g.manual_seed(int(seed))
+        parts = []
+        for start in range(0, L, win):
+            end = min(start + win, L)
+            seg = torch.randperm(end - start, generator=g, device=device) + start
+            parts.append(seg)
+        idx = torch.cat(parts, dim=0)
+    _GLOBAL_INDEX_CACHE[key] = idx
+    if len(_GLOBAL_INDEX_CACHE) > _GLOBAL_INDEX_CACHE_CAP:
+        _GLOBAL_INDEX_CACHE.popitem(last=False)
+    return idx
+
 class _SDPAPerturb:
-    def __init__(self, s, window=16, seed=42):
+    def __init__(self, s, window=0, seed=42):
         self.s = float(s)
-        self.window = int(max(1, window))
-        self.seed = seed
+        self.window = int(window)
+        self.seed = int(seed)
         self._orig = None
 
     def __enter__(self):
         self._orig = F.scaled_dot_product_attention
         s = self.s
-        w = self.window
+        win_cfg = self.window
         seed = self.seed
         orig = self._orig
-
-        def _window_idx(L, win, device):
-            if L <= 1 or win <= 1:
-                return torch.arange(L, device=device)
-            # Create a seeded generator for deterministic shuffling
-            generator = torch.Generator(device=device)
-            generator.manual_seed(seed)
-            
-            idx_parts = []
-            for start in range(0, L, win):
-                end = min(start + win, L)
-                seg = torch.randperm(end - start, generator=generator, device=device) + start
-                idx_parts.append(seg)
-            return torch.cat(idx_parts, dim=0)
 
         def patched(q, k, v, attn_mask=None, dropout_p=0.0, is_causal=False, scale=None):
             if s <= 0.0:
                 return orig(q, k, v, attn_mask=attn_mask, dropout_p=dropout_p, is_causal=is_causal, scale=scale)
             L = v.shape[-2]
-            idx = _window_idx(L, min(w, L), v.device)
+            w = win_cfg if win_cfg > 0 else _dynamic_window(L)
+            idx = _cached_window_idx(L, min(w, L), seed, v.device)
             v_shuffled = v.index_select(-2, idx)
             v_pert = (1.0 - s) * v + s * v_shuffled
             v_pert = _safe(v_pert)
@@ -75,27 +96,13 @@ def _eps(unet_apply, params):
     return _safe(out)
 
 
-def _rescale_delta(eps, delta, rescale):
-    if rescale <= 0.0:
-        return _safe(delta)
-    eps = _safe(eps)
-    delta = _safe(delta)
-    eps_std = eps.std(unbiased=False)
-    delta_std = delta.std(unbiased=False)
-    scale_factor = (eps_std / (delta_std + 1e-12)) * float(rescale)
-    scale_factor = torch.nan_to_num(scale_factor, nan=0.0, posinf=1.0, neginf=0.0)
-    scale_factor = float(min(1.0, max(0.0, scale_factor.item() if torch.is_tensor(scale_factor) else scale_factor)))
-    return _safe(delta * scale_factor)
-
-
 def _proj_out(delta, eps):
     delta = _safe(delta)
     eps = _safe(eps)
     dims = tuple(range(1, delta.ndim))
     num = (delta * eps).sum(dim=dims, keepdim=True)
     den = (eps * eps).sum(dim=dims, keepdim=True).clamp_min(1e-12)
-    proj = delta - (num / den) * eps
-    return _safe(proj)
+    return _safe(delta - (num / den) * eps)
 
 
 def _rms(x):
@@ -108,38 +115,81 @@ def _rms_clamp(delta, ref, tau=1.0):
     ref_r = _rms(ref)
     del_r = _rms(delta)
     gain = (float(tau) * ref_r) / (del_r + 1e-12)
-    gain = torch.nan_to_num(gain, nan=0.0, posinf=1.0, neginf=0.0)
-    gain = gain.clamp(max=1.0)
+    gain = torch.nan_to_num(gain, nan=0.0, posinf=1.0, neginf=0.0).clamp(max=1.0)
     return _safe(delta * gain)
 
 
+def _per_channel_rms(x):
+    x = _safe(x).float()
+    if x.ndim < 2:
+        return torch.ones_like(x)
+    dims = tuple(range(2, x.ndim))
+    return _safe(x.pow(2).mean(dim=dims, keepdim=True).sqrt())
+
+
+def _rescale_delta_advanced(eps, delta, rescale):
+    if rescale <= 0.0:
+        return _safe(delta)
+    eps = _safe(eps)
+    delta = _safe(delta)
+    eps_r = _per_channel_rms(eps)
+    del_r = _per_channel_rms(delta)
+    sf = (eps_r / (del_r + 1e-12)) * float(rescale)
+    sf = torch.nan_to_num(sf, nan=0.0, posinf=1.0, neginf=0.0).clamp(min=0.0, max=1.0)
+    return _safe(delta * sf)
+
+
+def _timestep_ratio(t):
+    tt = torch.as_tensor(t, dtype=torch.float32)
+    m = tt.detach().abs().max()
+    if not torch.isfinite(m) or m <= 0:
+        return 0.0
+    r = (tt / m).mean().item()
+    r = 0.0 if not math.isfinite(r) else r
+    return float(max(0.0, min(1.0, r)))
+
+
 def _apply_asg(unet_apply, params, s, rescale, seed):
-    s = float(s)
-    if not math.isfinite(s):
-        s = 0.0
-    rescale = float(rescale)
-    if not math.isfinite(rescale):
-        rescale = 0.0
-    s = max(0.0, s)
-    rescale = max(0.0, rescale)
+    s = 0.0 if (not math.isfinite(s) or s < 0.0) else float(s)
+    rescale = 0.0 if (not math.isfinite(rescale) or rescale < 0.0) else float(rescale)
 
     base = _eps(unet_apply, params)
-    with _SDPAPerturb(s, window=16, seed=seed):
-        guided = _eps(unet_apply, params)
+    if s == 0.0:
+        return base
+
+    ratio = _timestep_ratio(params.get("timestep", 0.0))
+    s_eff = s * (ratio ** 0.7)
+    if s_eff <= 0.0:
+        return base
+
+    N_min, N_max = 1, 4
+    Nf = N_min + (N_max - N_min) * (1.0 - ratio)
+    N = int(max(N_min, min(N_max, round(Nf))))
+
+    mean = None
+    for i in range(N):
+        si = int(seed + i * 2654435761)
+        with _SDPAPerturb(s_eff, window=0, seed=si):
+            y = _eps(unet_apply, params)
+        if mean is None:
+            mean = y
+        else:
+            k = float(i + 1)
+            mean = mean + (y - mean) / k
+    guided = mean if mean is not None else base
 
     delta = _safe(base - guided)
-    delta = _rescale_delta(base, delta, rescale)
+    delta = _rescale_delta_advanced(base, delta, rescale)
     delta = _proj_out(delta, base)
     delta = _rms_clamp(delta, base, tau=1.0)
-    out = _safe(base + s * delta)
-    return out
+    return _safe(base + s_eff * delta)
 
 
 class _ASGWrapper:
     def __init__(self, strength, rescale, seed):
         self.s = float(strength)
         self.rescale = float(rescale)
-        self.seed = seed
+        self.seed = int(seed)
 
     def __call__(self, unet_apply, params):
         return _apply_asg(unet_apply, params, self.s, self.rescale, self.seed)
