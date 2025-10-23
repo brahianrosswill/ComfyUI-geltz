@@ -48,7 +48,7 @@ Visualizes token influence to detect prompt bleed. Extracts token embeddings fro
 
 ### Token-Weighted Shuffle (tws)
 
-Modulates attention via entropy-gated, per-head token remixing with KL-bounded safety. Estimates baseline attention and derives a per-head blend prior from normalized entropy. Selects low-entropy heads, then gates the top-p tokens per head by importance. Builds a deterministic token permutation whose spread decays with denoising phase, RMS-matches permuted k/v to originals, and injects orthogonal noise scaled by token importance and concentration.
+Entropy-gated per-head token remixing under KL bounds. Select low-entropy heads, gate the top-p tokens, and mix in a local window via banded top-k with a deterministic permutation that shrinks during denoising; RMS-match k/v and add orthogonal noise scaled by importance. Solve per-head strengths with a KL-bounded binary search and RMS clamps, optionally mirror for queries with tighter KL, and cache projections, permutations, and device-scoped generators for speed. Intensity and phase set token fraction, noise, and KL budgets. Inspired by [Token Perturbation Guidance.](https://github.com/TaatiTeam/Token-Perturbation-Guidance)
 
 ---
 
@@ -56,4 +56,4 @@ Modulates attention via entropy-gated, per-head token remixing with KL-bounded s
 
 Strengthens prompt adherence by refining token embeddings. Nudges each CLIP token embedding toward a soft top-k neighbor blend using entropy and attention-scaled trust-region optimization with KL bounds and angle constraints.
 
-Inspired by [Vector Sculptor by Extraltodeus](https://github.com/Extraltodeus/Vector_Sculptor_ComfyUI).
+Inspired by [Vector Sculptor.](https://github.com/Extraltodeus/Vector_Sculptor_ComfyUI).
