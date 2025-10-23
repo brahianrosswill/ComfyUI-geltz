@@ -48,7 +48,9 @@ Visualizes token influence to detect prompt bleed. Extracts token embeddings fro
 
 ### Token-Weighted Shuffle (tws)
 
-Entropy-gated per-head token remixing under KL bounds. Select low-entropy heads, gate the top-p tokens, and mix in a local window via banded top-k with a deterministic permutation that shrinks during denoising; RMS-match k/v and add orthogonal noise scaled by importance. Solve per-head strengths with a KL-bounded binary search and RMS clamps. Inspired by [Token Perturbation Guidance.](https://github.com/TaatiTeam/Token-Perturbation-Guidance)
+Perturbs attention by remixing nearby tokens in entropy-selected heads. Mixes k/v inside a shrinking window via banded top-k, preserves scale with RMS matching, and sets strengths with KL-bounded search. Intensity and phase set token fraction, noise, and budgets, while optional query mirroring plus cached permutations and orthogonal projections keep it fast and stable.
+
+Inspired by [Token Perturbation Guidance.](https://github.com/TaatiTeam/Token-Perturbation-Guidance)
 
 ---
 
