@@ -50,7 +50,7 @@ Visualizes token influence to detect prompt bleed. Extracts token embeddings fro
 
 Perturbs attention by remixing nearby tokens in entropy-selected heads. Mixes k/v inside a shrinking window via banded top-k, preserves scale with RMS matching, and sets strengths with KL-bounded search. Intensity and phase set token fraction, noise, and budgets, while optional query mirroring plus cached permutations and orthogonal projections keep it fast and stable.
 
-Inspired by [Token Perturbation Guidance.](https://github.com/TaatiTeam/Token-Perturbation-Guidance)
+Inspired by [Token Perturbation Guidance](https://github.com/TaatiTeam/Token-Perturbation-Guidance).
 
 ---
 
@@ -58,4 +58,4 @@ Inspired by [Token Perturbation Guidance.](https://github.com/TaatiTeam/Token-Pe
 
 Strengthens prompt adherence by refining token embeddings. Nudges each CLIP token embedding toward a soft top-k neighbor blend using entropy and attention-scaled trust-region optimization with KL bounds and angle constraints.
 
-Inspired by [Vector Sculptor.](https://github.com/Extraltodeus/Vector_Sculptor_ComfyUI).
+Inspired by [Vector Sculptor](https://github.com/Extraltodeus/Vector_Sculptor_ComfyUI).
