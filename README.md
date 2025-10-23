@@ -42,7 +42,7 @@ Visualizes token influence to detect prompt bleed. Extracts token embeddings fro
 
 ### Token-Weighted Shuffle (tws)
 
-Modulates attention by adaptively remixing nearby tokens based on local content similarity and entropy. Computes baseline attention entropy to derive blend strength, selects active heads via entropy gating, and performs banded top-k token mixing within a local window. Applies orthogonal noise scaled by token importance and adjusts key/value blending via KL-bounded binary search to maintain stability. Uses orthogonal projections and sketch-based content keys for cache consistency and deterministic seeding.
+Modulates attention by adaptively remixing nearby tokens based on local content similarity and entropy. Computes baseline attention entropy to derive blend strength, selects active heads via entropy gating, and performs banded top-k token mixing within a local window. Applies orthogonal noise scaled by token importance and adjusts key/value blending via KL-bounded binary search to maintain stability.
 
 ---
 
