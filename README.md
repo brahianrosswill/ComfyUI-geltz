@@ -1,59 +1,47 @@
-
-
 ### Adaptive Refined Exponential Solver (ares)
 
-Deterministic variation of the `res_multistep` sampler. Batches σ, auto-converts model outputs between ε/x₀/v, computes Δt, and applies a momentum aware Heun step to advance the latent and estimate x₀.
-
-Clamps σ to [sigma_min, sigma_max], falling back to Euler when unavailable or with <2 sigmas, iterating `_ARES_STEP` across the schedule. Registers as `ares` within KSampler's sampler selection.
+Deterministic sampler for controlled denoising with momentum-aware steps. Batches sigma values, auto-converts between epsilon/x₀/v predictions, computes delta-t intervals, and applies Heun integration to advance the latent while estimating the clean image. Clamps sigma to valid ranges and falls back to Euler method when needed.
 
 ---
 
 ### Attention Shuffle Guidance (asg)
 
-Improves consistency of generated images. Hooks PyTorch SDPA to mix window-shuffled attention, runs a guided pass, then nudges the base output using a rescaled and RMS-clamped delta.
+Improves visual consistency in generated images. Hooks self-attention to blend window-shuffled patterns during a guided pass, then nudges the base output using a rescaled delta clamped by RMS normalization.
 
 ---
 
 ### Cosine-Uniform Scheduler (csu)
 
-Inspired from `sgm_uniform`. Cosine-eased sigma schedule, maps uniform u∈[0,1] through w=((1−cos(πu))/2)^γ to timesteps, converts to sigmas, enforces strict decrease, caps the first at σ_max, and ends with 0.
+Cosine-eased sigma schedule for smoother denoising transitions. Maps uniform samples through w=((1−cos(πu))/2)^γ to timesteps, converts to sigmas, enforces monotonic decrease, and caps endpoints at σ_max and zero.
 
 ---
 
 ### Dithered Isotropic Latent (dil)
 
-Improves empty latents. Adds two latent initializers, `DIL_EmptyLatent` and `DIL2_EmptyLatent`, that start from noise and iteratively ascend a differentiable score based on edges, high-frequency energy, kurtosis, and orientation coherence, with normalization and dithering to return a `LATENT`.
-
-The spectral variant adds per-channel seeds and frequency-domain shaping via `beta` and `spectral_mix`, and the file includes the gradient, blur, FFT, dtype/device, and node-registration utilities.
+Generates structured initial latents instead of pure noise. Optimizes noise through gradient ascent on a differentiable score combining edge detection, high-frequency energy, kurtosis, and orientation coherence. The spectral variant adds per-channel seeding and frequency-domain shaping via beta and spectral_mix parameters.
 
 ---
 
 ### Quantile Match Scaling (qms)
 
-Precise rescaling of CFG to prevent oversaturation. Does not affect original structure. Hooks pre-CFG and rescales the guidance g = cond − uncond by matching low, mid, and high frequency quantiles to the conditional.
-
-Adapts cutoffs and quantiles each step, fits per-band linear maps with EMA clamps and a CFG-dependent rescale, applies them in FFT space, and returns cond_new = uncond + g_scaled.
+Prevents CFG oversaturation while preserving image structure. Rescales guidance (cond − uncond) by matching low, mid, and high frequency quantiles to the conditional distribution. Adapts per-band linear transformations with EMA smoothing and applies them in FFT space.
 
 ---
 
 ### Sigma-Weighted Shuffle (sws)
 
-Perturbs attention by blending locally shuffled keys/values while keeping the attention distribution close to baseline. It derives a normalized progress **u** from log-sigma or step metadata, then scales queries/keys with a temperature factor and estimates entropy on sampled baseline attention to set an adaptive strength.
-
-Builds block-wise cyclic window permutations that shrink as denoising progresses, then selects blend weights via a KL-bounded binary search so changes stay controlled. It handles q/k dim mismatches with orthonormal projections, subsamples tokens for speed, caches projections and permutations.
+Perturbs attention with controlled local shuffling of keys/values. Derives normalized progress from log-sigma, scales queries/keys with adaptive temperature, and estimates attention entropy to set blend strength. Builds block-wise cyclic permutations that shrink during denoising, selecting blend weights via KL-bounded binary search. Handles dimension mismatches with orthonormal projections.
 
 ---
 
 ### tokenteller
 
-Useful to detect "prompt bleed". Parses conditioning to gather up to `limit_streams` token embeddings, derives a per-token value by norm/var/mean normalized to [0,1], and assigns word labels from prompt-like fields or indices.
-
-Renders a 2D wave path displaced by those values into spikes, rasterizes a colored viridis-like curve and bitmap text plus a left list of word value pairs, and outputs a single `IMAGE` tensor.
+Visualizes token influence to detect prompt bleed. Extracts token embeddings from conditioning, computes per-token values via norm/variance/mean normalized to [0,1], and renders a 2D wave path with spikes proportional to each token's influence. Outputs colored curve with viridis-like gradient and labeled word-value pairs.
 
 ---
 
 ### vectorpusher
 
-Improve adherence to prompts. Adds a conditioning node `vectorpusher` that tokenizes the prompt and, for each CLIP token, nudges its embedding toward a soft top-k neighbor blend using an entropy and attention-scaled trust-region step with a KL bound and angle cap.
+Strengthens prompt adherence by refining token embeddings. Nudges each CLIP token embedding toward a soft top-k neighbor blend using entropy and attention-scaled trust-region optimization with KL bounds and angle constraints.
 
-Inspired from [Vector Sculptor by Extraltodeus.](https://github.com/Extraltodeus/Vector_Sculptor_ComfyUI)
+Inspired by [Vector Sculptor by Extraltodeus](https://github.com/Extraltodeus/Vector_Sculptor_ComfyUI).
