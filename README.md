@@ -64,4 +64,4 @@ Inspired by [Vector Sculptor](https://github.com/Extraltodeus/Vector_Sculptor_Co
 
 ### Velocity Scaling (vs)
 
-Modification of the Epsilon Scaling algorithm found in [Elucidating the Exposure Bias in Diffusion Models](https://arxiv.org/abs/2308.15321) specifically made for v-prediction models.
+Modification of the Epsilon Scaling algorithm found in [Elucidating the Exposure Bias in Diffusion Models](https://arxiv.org/abs/2308.15321) specifically made for v-prediction models. Lowers tendency to over-brighten images.
