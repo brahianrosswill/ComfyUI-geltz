@@ -55,6 +55,15 @@ def _safe_quantile_computation(x, quantiles, fallback_value=0.0):
     except:
         return [fallback_value] * len(quantiles)
 
+def _band_quantiles_safe_from_fft(xf, masks, winsor_p, quantiles):
+    B, C, H, W = xf.shape
+    results = []
+    for m in masks:
+        xb = _ifft_real(xf * m.view(1, 1, H, W))
+        xb = _winsor(xb, winsor_p)
+        results.append(_safe_quantile_computation(xb, quantiles))
+    return results
+
 def _band_quantiles_safe(x, masks, winsor_p, quantiles):
     results = []
     for m in masks:
@@ -103,22 +112,18 @@ def _apply_qms(g, a_low, b_low, a_mid, b_mid, a_high, b_high, masks):
     g32 = g.float()
     gf = fft.fft2(g32, norm="ortho")
     low, mid, high = masks
-    gf_low = gf * low.view(1, 1, H, W)
-    gf_mid = gf * mid.view(1, 1, H, W)
-    gf_high = gf * high.view(1, 1, H, W)
-    g_low = _ifft_real(gf_low)
-    g_mid = _ifft_real(gf_mid)
-    g_high = _ifft_real(gf_high)
-    a_low = a_low.to(dtype=g32.dtype)
-    b_low = b_low.to(dtype=g32.dtype)
-    a_mid = a_mid.to(dtype=g32.dtype)
-    b_mid = b_mid.to(dtype=g32.dtype)
-    a_high = a_high.to(dtype=g32.dtype)
-    b_high = b_high.to(dtype=g32.dtype)
-    g_low_scaled = a_low * g_low + b_low
-    g_mid_scaled = a_mid * g_mid + b_mid
-    g_high_scaled = a_high * g_high + b_high
-    g_scaled = g_low_scaled + g_mid_scaled + g_high_scaled
+    low = low.view(1, 1, H, W).to(gf.dtype).to(gf.device)
+    mid = mid.view(1, 1, H, W).to(gf.dtype).to(gf.device)
+    high = high.view(1, 1, H, W).to(gf.dtype).to(gf.device)
+    a_low = a_low.to(dtype=g32.dtype, device=g32.device)
+    b_low = b_low.to(dtype=g32.dtype, device=g32.device)
+    a_mid = a_mid.to(dtype=g32.dtype, device=g32.device)
+    b_mid = b_mid.to(dtype=g32.dtype, device=g32.device)
+    a_high = a_high.to(dtype=g32.dtype, device=g32.device)
+    b_high = b_high.to(dtype=g32.dtype, device=g32.device)
+    band_scale = a_low.view(1,1,1,1).to(gf.dtype) * low + a_mid.view(1,1,1,1).to(gf.dtype) * mid + a_high.view(1,1,1,1).to(gf.dtype) * high
+    gf_scaled = gf * band_scale
+    g_scaled = _ifft_real(gf_scaled) + (b_low + b_mid + b_high).view(1,1,1,1)
     return g_scaled.to(g.dtype)
 
 def _adaptive_ema_params(iteration, total_iterations, base_rho=0.8, base_r=1.2):
@@ -156,12 +161,11 @@ def _adaptive_quantiles(x, num_quantiles=7):
     return [float(v.item()) for v in all_q]
 
 def _dynamic_rescale(cfg_value, base_rescale=0.75):
-    if cfg_value <= 3.0:
-        return base_rescale
-    elif cfg_value <= 7.0:
-        return base_rescale + (cfg_value - 3.0) * 0.05
-    else:
-        return min(base_rescale + 0.2, 0.95)
+    import math
+    k = 0.6
+    x0 = 5.0
+    s = 1.0 / (1.0 + math.exp(-k * (float(cfg_value) - x0)))
+    return min(base_rescale + 0.2 * s, 0.95)
 
 def _safe_rms(x):
     x = torch.nan_to_num(x, nan=0.0, posinf=0.0, neginf=0.0)
@@ -202,9 +206,11 @@ class QMS(io.ComfyNode):
             uncond = conds_out[1]
             if cond is None or uncond is None:
                 return conds_out
+            B, C, H, W = cond.shape
+            if H < 16 or W < 16:
+                return conds_out
             w = float(args.get("cfg", 1.0))
             g = cond - uncond
-            B, C, H, W = cond.shape
             device = cond.device
             if state["total"] is None:
                 total = None
@@ -222,8 +228,10 @@ class QMS(io.ComfyNode):
             masks = state["masks"]
             xcfg_temp = uncond + w * g
             qs = _adaptive_quantiles(cond, num_quantiles=7)
-            cond_q = _band_quantiles_safe(cond, masks, 99.9, qs)
-            xcfg_q = _band_quantiles_safe(xcfg_temp, masks, 99.9, qs)
+            xf_cond = fft.fft2(cond.float(), norm="ortho")
+            xf_xcfg = fft.fft2(xcfg_temp.float(), norm="ortho")
+            cond_q = _band_quantiles_safe_from_fft(xf_cond, masks, 99.9, qs)
+            xcfg_q = _band_quantiles_safe_from_fft(xf_xcfg, masks, 99.9, qs)
             a_low0, b_low0 = _fit_robust_map_from_qs(xcfg_q[0], cond_q[0], qs)
             a_mid0, b_mid0 = _fit_robust_map_from_qs(xcfg_q[1], cond_q[1], qs)
             a_high0, b_high0 = _fit_robust_map_from_qs(xcfg_q[2], cond_q[2], qs)
