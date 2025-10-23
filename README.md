@@ -22,7 +22,7 @@ Generates structured initial latents instead of pure noise. Optimizes noise thro
 
 ---
 
-### Hybrid Cosine/ArcTan Scheduler (HCA)
+### Hybrid Cosine-Arctan Scheduler (hca)
 
 Cosine-eased sigma schedule using the arctan(sigma) space for a non-linear noise reduction curve. Interpolates arctan(sigma\_max) and arctan(sigma\_min) using the w=((1−cos(pi u))/2)\^gamma weight, then converts back to sigmas, enforces monotonic decrease, and caps endpoints at sigma\_max and zero.
 
