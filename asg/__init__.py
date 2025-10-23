@@ -111,7 +111,7 @@ def _rms(x):
     return _safe(x.pow(2).mean(dim=dims, keepdim=True).sqrt())
 
 
-def _rms_clamp(delta, ref, tau=1.0):
+def _rms_clamp(delta, ref, tau=0.7):
     ref_r = _rms(ref)
     del_r = _rms(delta)
     gain = (float(tau) * ref_r) / (del_r + 1e-12)
@@ -181,7 +181,7 @@ def _apply_asg(unet_apply, params, s, rescale, seed):
     delta = _safe(base - guided)
     delta = _rescale_delta_advanced(base, delta, rescale)
     delta = _proj_out(delta, base)
-    delta = _rms_clamp(delta, base, tau=1.0)
+    delta = _rms_clamp(delta, base, tau=0.7)
     return _safe(base + s_eff * delta)
 
 
