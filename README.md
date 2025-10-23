@@ -22,6 +22,12 @@ Generates structured initial latents instead of pure noise. Optimizes noise thro
 
 ---
 
+### Hybrid Cosine/ArcTan Scheduler (HCA)
+
+Cosine-eased sigma schedule using the arctan(sigma) space for a non-linear noise reduction curve. Interpolates arctan(sigma\_max) and arctan(sigma\_min) using the w=((1−cos(pi u))/2)\^gamma weight, then converts back to sigmas, enforces monotonic decrease, and caps endpoints at sigma\_max and zero.
+
+---
+
 ### Quantile Match Scaling (qms)
 
 Prevents CFG oversaturation while preserving image structure. Rescales guidance (cond − uncond) by matching low, mid, and high frequency quantiles to the conditional distribution. Adapts per-band linear transformations with EMA smoothing and applies them in FFT space.
