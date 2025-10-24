@@ -67,6 +67,10 @@ def orbit_merge_state_dicts(sd_a, sd_b, alpha_par, alpha_orth, trust_k, eps, coe
         if pbar:
             pbar.update(1)
         if isinstance(ta, Tensor) and isinstance(tb, Tensor) and ta.shape == tb.shape:
+            # Ensure both tensors are on the same device
+            if ta.device != tb.device:
+                tb = tb.to(ta.device)
+            
             e = torch.as_tensor(float(eps), device=ta.device, dtype=ta.dtype)
             wp = torch.as_tensor(float(alpha_par), device=ta.device, dtype=ta.dtype)
             wo = torch.as_tensor(float(alpha_orth), device=ta.device, dtype=ta.dtype)
@@ -132,8 +136,6 @@ class ORBITModelMerge:
         print("ORBIT merge complete.\n")
         return mmA, mcA
 
-
-WEB_DIRECTORY = "./web"
 NODE_CLASS_MAPPINGS = {"ORBITModelMerge": ORBITModelMerge}
 NODE_DISPLAY_NAME_MAPPINGS = {"ORBITModelMerge": "ORBIT Merge"}
 __all__ = ["NODE_CLASS_MAPPINGS", "NODE_DISPLAY_NAME_MAPPINGS"]
