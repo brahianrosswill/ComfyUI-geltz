@@ -24,3 +24,6 @@ for name in sorted(set(names)):
         continue
 
 __all__ = ["NODE_CLASS_MAPPINGS", "NODE_DISPLAY_NAME_MAPPINGS"]
+def _log_loaded():
+    print(f"[geltz] loaded {len(NODE_CLASS_MAPPINGS)} nodes", flush=True)
+_log_loaded()
