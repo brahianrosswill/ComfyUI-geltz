@@ -2,7 +2,7 @@
 
 Deterministic sampler for controlled denoising with momentum-aware steps. Batches sigma values, auto-converts between epsilon/x₀/v predictions, computes delta-t intervals, and applies Heun integration to advance the latent while estimating the clean image. Clamps sigma to valid ranges and falls back to Euler method when needed.
 
-Includes a variant (ares_rda) for less model evaluations, converging at around 8 steps, with an algorithm called Residual Delta Approximation.
+Includes a variant (ares_rda) for less model evaluations, converging at around 8 steps, using an algorithm named Residual Delta Approximation.
 
 ---
 
