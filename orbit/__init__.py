@@ -1,7 +1,0 @@
-from .orbit import NODE_CLASS_MAPPINGS, NODE_DISPLAY_NAME_MAPPINGS
-
-__version__ = "1.0.0"
-__author__ = "geltz"
-__all__ = ['NODE_CLASS_MAPPINGS', 'NODE_DISPLAY_NAME_MAPPINGS']
-
-WEB_DIRECTORY = "./web"
