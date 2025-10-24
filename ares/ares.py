@@ -189,6 +189,7 @@ class _RDAStepProxy:
         self.prev2_x = None
         self.prev_denoised = None
         self.stale = 0
+        self.skipped = 0  # Track number of skipped evaluations
 
     @torch.no_grad()
     def step(self, model, x, sigma, sigma_next, h, c2, extra_args, pbar, 
