@@ -1,5 +1,3 @@
-# Residual-Delta Acceleration
-
 import torch
 
 
@@ -86,7 +84,7 @@ class RDA:
         return y
 
 
-def wrap_with_rda(model_fn, sigmas, tau=0.02, gamma=1.2, max_stale=2, w=1.0):
+def wrap_with_rda(model_fn, sigmas, tau=0.07, gamma=1.0, max_stale=2, w=0.8):
     """
     Convenience function to wrap a model function with RDA acceleration.
     
@@ -103,7 +101,7 @@ def wrap_with_rda(model_fn, sigmas, tau=0.02, gamma=1.2, max_stale=2, w=1.0):
     """
     return RDA(
         model_fn,
-        steps=max(1, len(sigmas) - 1),
+        steps=max(1, (len(sigmas) - 1)*3),
         tau=tau,
         gamma=gamma,
         max_stale=max_stale,
