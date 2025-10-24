@@ -5,3 +5,5 @@ opencv-python
 safetensors
 diffusers
 transformers
+sd-mecha
+textual
