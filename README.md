@@ -38,7 +38,7 @@ Fast, edge-preserving filter that works by selecting the mean color from one of 
 
 ### 🪐 ORBIT Merge (orbit)
 
-Direction-aware weight merger that decomposes the source–base delta into components parallel and orthogonal to the base, scales them by alpha_parallel and alpha_perp, then blends per-tensor using a trust factor. Implemented with PyTorch vector ops (batched norms, safe normalization with epsilon, optional coefficient clipping) to process all parameters efficiently.
+Adds the novelty of model_b onto model_a. Direction-aware weight merger that decomposes the source–base delta into components parallel and orthogonal to the base, scales them by alpha_parallel and alpha_perp, then blends per-tensor using a trust factor. Implemented with PyTorch vector ops (batched norms, safe normalization with epsilon, optional coefficient clipping) to process all parameters efficiently.
 
 Preserves core behavior by favoring shared directions while allowing controlled novelty along orthogonal directions; supports UNet/CLIP/LoRA state dicts and mixed precision.
 
