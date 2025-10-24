@@ -249,7 +249,46 @@ class _RDAStepProxy:
         self.i += 1
         return x_out, vel_out, denoised, h_out
 
-from .rda import wrap_with_rda as _wrap_rda; return sample_ares(_wrap_rda(model, sigmas, tau=tau, gamma=gamma, max_stale=max_stale, w=w), x, sigmas, extra_args=extra_args, callback=callback, disable=disable, c2=c2, simple_phi_calc=simple_phi_calc, momentum=momentum, sigma_min=sigma_min, sigma_max=sigma_max)
+def sample_ares_rda(
+    model,
+    x,
+    sigmas,
+    *,
+    extra_args=None,
+    callback=None,
+    disable=False,
+    c2=None,
+    simple_phi_calc=False,
+    momentum=0.0,
+    sigma_min=None,
+    sigma_max=None,
+    tau=0.25,
+    gamma=0.6,
+    max_stale=3,
+    w=1.0,
+):
+    # import here to avoid package-relative import issues at module import time
+    try:
+        from .rda import wrap_with_rda as _wrap_rda
+    except Exception:
+        from rda import wrap_with_rda as _wrap_rda  # fallback for flat-layout
+
+    model_wrapped = _wrap_rda(model, sigmas, tau=tau, gamma=gamma, max_stale=max_stale, w=w)
+
+    # delegate everything else to the proven ARES loop
+    return sample_ares(
+        model_wrapped,
+        x,
+        sigmas,
+        extra_args=extra_args,
+        callback=callback,
+        disable=disable,
+        c2=c2,
+        simple_phi_calc=simple_phi_calc,
+        momentum=momentum,
+        sigma_min=sigma_min,
+        sigma_max=sigma_max,
+    )
 
 def _register_sampler_name(name: str):
     try:
