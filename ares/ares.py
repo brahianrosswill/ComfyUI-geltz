@@ -249,55 +249,7 @@ class _RDAStepProxy:
         self.i += 1
         return x_out, vel_out, denoised, h_out
 
-@torch.no_grad()
-def sample_ares_rda(model, x, sigmas, extra_args=None, callback=None, disable=False,
-                    c2: float = 0.5, simple_phi_calc: bool = False, momentum: float = 0.0,
-                    sigma_min: float = 0.0, sigma_max: float = float('inf'),
-                    tau: float = 0.07, gamma: float = 1.0, max_stale: int = 2, w: float = 0.8):
-    """ARES-RDA sampler - ARES with Residual-Delta Acceleration."""
-    n = int(sigmas.numel()) if torch.is_tensor(sigmas) else len(sigmas)
-    if (_ARES_STEP is None) or (n < 2):
-        return _kdiff.sample_euler(model, x, sigmas, extra_args=extra_args, callback=callback, disable=disable)
-    
-    extra_args = {} if extra_args is None else extra_args
-    
-    if torch.is_tensor(sigmas):
-        sigmas = sigmas.to(device=x.device, dtype=torch.float32)
-    else:
-        sigmas = torch.tensor(sigmas, device=x.device, dtype=torch.float32)
-    
-    n = len(sigmas) - 1
-    if n < 1:
-        return x
-    
-    # Clamp sigmas
-    sigmas_clamped = sigmas.clone()
-    if sigma_max != float('inf') or sigma_min > 0:
-        for i in range(n):
-            sigmas_clamped[i] = sigmas_clamped[i].clamp(min=sigma_min, max=sigma_max)
-    
-    h, vel, denoised = 1.0, None, None
-    rda_proxy = _RDAStepProxy(n_steps=n, tau=tau, gamma=gamma, max_stale=max_stale, w=w)
-    
-    for i in range(n):
-        sigma = float(sigmas_clamped[i])
-        sigma_next = float(sigmas_clamped[i + 1])
-        
-        if abs(sigma - sigma_next) < 1e-10:
-            if callback is not None:
-                callback({"i": i, "denoised": denoised if denoised is not None else x, "x": x, "sigma": sigma})
-            continue
-        
-        x, vel, denoised, h = rda_proxy.step(
-            model, x, sigma, sigma_next, h, c2=c2, extra_args=extra_args, 
-            pbar=callback, simple_phi_calc=simple_phi_calc, momentum=momentum, 
-            vel=vel, vel_2=None, time=None
-        )
-        
-        if callback is not None:
-            callback({"i": i, "denoised": denoised, "x": x, "sigma": sigma_next})
-    
-    return x
+from .rda import wrap_with_rda as _wrap_rda; return sample_ares(_wrap_rda(model, sigmas, tau=tau, gamma=gamma, max_stale=max_stale, w=w), x, sigmas, extra_args=extra_args, callback=callback, disable=disable, c2=c2, simple_phi_calc=simple_phi_calc, momentum=momentum, sigma_min=sigma_min, sigma_max=sigma_max)
 
 def _register_sampler_name(name: str):
     try:
