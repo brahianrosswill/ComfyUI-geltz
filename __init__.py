@@ -24,6 +24,15 @@ for name in sorted(set(names)):
         continue
 
 __all__ = ["NODE_CLASS_MAPPINGS", "NODE_DISPLAY_NAME_MAPPINGS"]
+
+
+print()
+COLOR = "\033[38;2;216;191;216m"
+RESET_COLOR = "\033[0m"
+
 def _log_loaded():
-    print(f"[geltz] loaded {len(NODE_CLASS_MAPPINGS)} nodes", flush=True)
+    # Prepend the color code and append the reset code to the string
+    print(f"{COLOR}[geltz] loaded {len(NODE_CLASS_MAPPINGS)} nodes{RESET_COLOR}", flush=True)
+
 _log_loaded()
+print()
