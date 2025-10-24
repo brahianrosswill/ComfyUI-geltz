@@ -43,7 +43,7 @@ class ORBITModelMerge:
         return {"required":{"model_a":("MODEL",{}),"model_b":("MODEL",{}),"clip_a":("CLIP",{}),"clip_b":("CLIP",{}),"alpha_parallel":("FLOAT",{"default":0.25,"min":0.0,"max":1.0,"step":0.01,"display":"slider"}),"alpha_orthogonal":("FLOAT",{"default":0.50,"min":0.0,"max":1.0,"step":0.01,"display":"slider"}),"trust_k":("FLOAT",{"default":3.0,"min":0.5,"max":10.0,"step":0.1}),"coef_clip":("FLOAT",{"default":8.0,"min":0.0,"max":20.0,"step":0.5})}}
     RETURN_TYPES=("MODEL","CLIP");RETURN_NAMES=("model","clip");FUNCTION="merge_models";CATEGORY="advanced/model_merging"
     def merge_models(self,model_a,model_b,clip_a,clip_b,alpha_parallel,alpha_orthogonal,trust_k,coef_clip):
-        print(f"\n🪐 ORBIT Merge α∥={alpha_parallel:.2f} α⊥={alpha_orthogonal:.2f} trust_k={trust_k:.1f} coef_clip={coef_clip:.1f}")
+        print(f"\nORBIT Merge α∥={alpha_parallel:.2f} α⊥={alpha_orthogonal:.2f} trust_k={trust_k:.1f} coef_clip={coef_clip:.1f}")
         mmA,mmB=model_a.clone(),model_b;mcA,mcB=clip_a.clone(),clip_b;sdA,sdB=model_a.model.state_dict(),model_b.model.state_dict();keys=set(sdA.keys())&set(sdB.keys());print(f"   Merging {len(keys)} MODEL tensors...")
         p=ProgressBar(len(keys));sdM=orbit_merge_state_dicts(sdA,sdB,alpha_parallel,alpha_orthogonal,trust_k,1e-8,coef_clip,p);mmA.model.load_state_dict(sdM,strict=False)
         try:
