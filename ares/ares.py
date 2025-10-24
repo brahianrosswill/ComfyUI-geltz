@@ -126,28 +126,36 @@ def sample_ares(model, x, sigmas, extra_args=None, callback=None, disable=False,
                 c2: float = 0.5, simple_phi_calc: bool = False, momentum: float = 0.0,
                 sigma_min: float = 0.0, sigma_max: float = float('inf')):
     """ARES sampler - Adaptive Residual Euler Solver."""
+    # ---- normalize options unconditionally ----
+    if c2 is None:
+        c2 = 0.5
+    if sigma_min is None:
+        sigma_min = 0.0
+    if sigma_max is None:
+        sigma_max = float('inf')
+
     n = int(sigmas.numel()) if torch.is_tensor(sigmas) else len(sigmas)
     if (_ARES_STEP is None) or (n < 2):
         return _kdiff.sample_euler(model, x, sigmas, extra_args=extra_args, callback=callback, disable=disable)
-    
+
     extra_args = {} if extra_args is None else extra_args
-    
+
     # Handle sigmas
     if torch.is_tensor(sigmas):
         sigmas = sigmas.to(device=x.device, dtype=torch.float32)
     else:
         sigmas = torch.tensor(sigmas, device=x.device, dtype=torch.float32)
-    
+
     n = len(sigmas) - 1
     if n < 1:
         return x
-    
+
     # Clamp sigmas to valid range (except final zero)
     sigmas_clamped = sigmas.clone()
-    if sigma_max != float('inf') or sigma_min > 0:
+    if (sigma_max < float('inf')) or (sigma_min > 0.0):
         for i in range(n):
             sigmas_clamped[i] = sigmas_clamped[i].clamp(min=sigma_min, max=sigma_max)
-    
+
     h, vel, denoised = 1.0, None, None
     
     for i in range(n):
@@ -277,17 +285,10 @@ def sample_ares_rda(
 
     # delegate everything else to the proven ARES loop
     return sample_ares(
-        model_wrapped,
-        x,
-        sigmas,
-        extra_args=extra_args,
-        callback=callback,
-        disable=disable,
-        c2=c2,
-        simple_phi_calc=simple_phi_calc,
-        momentum=momentum,
-        sigma_min=sigma_min,
-        sigma_max=sigma_max,
+        model_wrapped, x, sigmas,
+        extra_args=extra_args, callback=callback, disable=disable,
+        c2=0.5, simple_phi_calc=simple_phi_calc, momentum=momentum,
+        sigma_min=0.0, sigma_max=float('inf'),
     )
 
 def _register_sampler_name(name: str):
