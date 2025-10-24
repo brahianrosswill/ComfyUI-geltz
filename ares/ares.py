@@ -94,13 +94,12 @@ def _ares_builtin(model, x, sigma, sigma_next, h, c2=0.5, extra_args=None, pbar=
     return x_next, vel_out, denoised, h_out
 
 def _resolve_ares_step():
-    """Try to find external ARES implementation, fall back to built-in."""
     # Try relative first (inside this node pack), then absolute import.
     candidates = [
-        (".ares", __package__),
-        ("ares", None),
+        (".ares", __package__),  # comfy package layout
+        ("ares", None),          # flat layout / sys.path
     ]
-    # Accept any of these attribute names as the step function.
+    # Accept any of these attribute names from the extension
     attrs = ("_ares", "ares_step", "ARES_STEP")
 
     for modname, pkg in candidates:
@@ -114,12 +113,11 @@ def _resolve_ares_step():
                 print(f"[ares] OK: using {attr} from {modname}")
                 return fn
 
-    # If no external module found, use built-in
     print("[ares] Using built-in ARES step")
-    return _ares_builtin
+    return _ares_builtin  # << always return a callable
 
 # Initialize ARES step function (now after _ares_builtin is defined)
-_ARES_STEP = _resolve_ares_step()
+_ARES_STEP = _resolve_ares_step()  # never None
 
 @torch.no_grad()
 def sample_ares(model, x, sigmas, extra_args=None, callback=None, disable=False,
@@ -135,8 +133,15 @@ def sample_ares(model, x, sigmas, extra_args=None, callback=None, disable=False,
         sigma_max = float('inf')
 
     n = int(sigmas.numel()) if torch.is_tensor(sigmas) else len(sigmas)
-    if (_ARES_STEP is None) or (n < 2):
-        return _kdiff.sample_euler(model, x, sigmas, extra_args=extra_args, callback=callback, disable=disable)
+    if n < 2:
+        return x  # nothing to do
+
+    step_fn = _ARES_STEP or _ares_builtin  # belt & suspenders
+    
+    if step_fn is _ares_builtin:
+        print("[ares] running built-in ARES step")
+    else:
+        print("[ares] running external ARES step")
 
     extra_args = {} if extra_args is None else extra_args
 
@@ -167,10 +172,10 @@ def sample_ares(model, x, sigmas, extra_args=None, callback=None, disable=False,
                 callback({"i": i, "denoised": denoised if denoised is not None else x, "x": x, "sigma": sigma})
             continue
         
-        x, vel, denoised, h = _ARES_STEP(
-            model, x, sigma, sigma_next, h, 
+        x, vel, denoised, h = step_fn(
+            model, x, sigma, sigma_next, h,
             c2=c2, extra_args=extra_args, pbar=callback,
-            simple_phi_calc=simple_phi_calc, momentum=momentum, 
+            simple_phi_calc=simple_phi_calc, momentum=momentum,
             vel=vel, vel_2=None, time=None
         )
         
@@ -266,7 +271,7 @@ def sample_ares_rda(
     callback=None,
     disable=False,
     c2=None,
-    simple_phi_calc=False,
+    simple_phi_calc=False,   # we’ll ignore external True and force second-order
     momentum=0.0,
     sigma_min=None,
     sigma_max=None,
@@ -275,21 +280,52 @@ def sample_ares_rda(
     max_stale=3,
     w=1.0,
 ):
-    # import here to avoid package-relative import issues at module import time
-    try:
-        from .rda import wrap_with_rda as _wrap_rda
-    except Exception:
-        from rda import wrap_with_rda as _wrap_rda  # fallback for flat-layout
+    extra_args = {} if extra_args is None else extra_args
+    c2 = 0.5 if c2 is None else float(c2)
 
-    model_wrapped = _wrap_rda(model, sigmas, tau=tau, gamma=gamma, max_stale=max_stale, w=w)
+    # normalize sigmas
+    if torch.is_tensor(sigmas):
+        sigmas = sigmas.to(device=x.device, dtype=torch.float32)
+    else:
+        sigmas = torch.tensor(sigmas, device=x.device, dtype=torch.float32)
 
-    # delegate everything else to the proven ARES loop
-    return sample_ares(
-        model_wrapped, x, sigmas,
-        extra_args=extra_args, callback=callback, disable=disable,
-        c2=0.5, simple_phi_calc=simple_phi_calc, momentum=momentum,
-        sigma_min=0.0, sigma_max=float('inf'),
-    )
+    n_total = int(sigmas.numel()) - 1
+    if n_total < 1:
+        return x
+
+    # step-level RDA
+    proxy = _RDAStepProxy(n_steps=n_total, tau=tau, gamma=gamma, max_stale=max_stale, w=w)
+
+    # force second-order (NOT Euler)
+    simple_phi_calc = False
+
+    h = 1.0
+    vel, denoised = None, None
+
+    for i in range(n_total):
+        s  = float(sigmas[i])
+        sn = float(sigmas[i + 1])
+        if abs(s - sn) < 1e-12:
+            if callback is not None:
+                callback({"i": i, "denoised": denoised if denoised is not None else x, "x": x, "sigma": s})
+            continue
+
+        # be conservative on large σ jumps: force fresh compute
+        if i >= 1:
+            ds = float(abs(sigmas[i] - sigmas[i - 1]))
+            if ds > 0.5 * max(1e-3, float(abs(sigmas[i - 1]))):
+                proxy.stale = proxy.max_stale
+
+        x, vel, denoised, h = proxy.step(
+            model, x, s, sn, h,
+            c2=c2, extra_args=extra_args, pbar=callback,
+            simple_phi_calc=False, momentum=momentum,
+            vel=vel, vel_2=None, time=None
+        )
+        if callback is not None:
+            callback({"i": i, "denoised": denoised, "x": x, "sigma": sn})
+
+    return x
 
 def _register_sampler_name(name: str):
     try:
