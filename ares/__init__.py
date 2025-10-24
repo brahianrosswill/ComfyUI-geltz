@@ -1,4 +1,5 @@
 # Adaptive Refined Exponential Solver
+# + Residual-Delta Acceleration
 
 from __future__ import annotations
 import importlib
