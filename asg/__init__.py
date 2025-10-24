@@ -1,15 +1,16 @@
-# Attention Shuffle Guidance
-
 import math
 from collections import OrderedDict
 import torch
 import torch.nn.functional as F
 
+
 def _safe(x):
     return torch.nan_to_num(x, nan=0.0, posinf=0.0, neginf=0.0)
 
+
 _GLOBAL_INDEX_CACHE = OrderedDict()
 _GLOBAL_INDEX_CACHE_CAP = 64
+
 
 def _device_key(t):
     d = t.device
@@ -17,8 +18,10 @@ def _device_key(t):
         return ("cuda", d.index)
     return (d.type, None)
 
+
 def _dynamic_window(L):
     return int(max(1, round(L ** 0.5)))
+
 
 def _cached_window_idx(L, win, seed, device):
     key = ("idx", int(L), int(win), int(seed), _device_key(torch.empty(0, device=device)))
@@ -40,6 +43,7 @@ def _cached_window_idx(L, win, seed, device):
     if len(_GLOBAL_INDEX_CACHE) > _GLOBAL_INDEX_CACHE_CAP:
         _GLOBAL_INDEX_CACHE.popitem(last=False)
     return idx
+
 
 class _SDPAPerturb:
     def __init__(self, s, window=0, seed=42):
@@ -176,8 +180,8 @@ def _apply_asg(unet_apply, params, s, rescale, seed):
         else:
             k = float(i + 1)
             mean = mean + (y - mean) / k
-    guided = mean if mean is not None else base
 
+    guided = mean if mean is not None else base
     delta = _safe(base - guided)
     delta = _rescale_delta_advanced(base, delta, rescale)
     delta = _proj_out(delta, base)
@@ -203,7 +207,7 @@ class AttentionShuffleGuidanceModelPatch:
                 "model": ("MODEL",),
                 "strength": ("FLOAT", {"default": 0.25, "min": 0.0, "max": 2.0, "step": 0.05}),
                 "rescale": ("FLOAT", {"default": 0.5, "min": 0.0, "max": 1.0, "step": 0.05}),
-                "seed": ("INT", {"default": 42, "min": 0, "max": 0xffffffffffffffff}),
+                "seed": ("INT", {"default": 42, "min": 0, "max": 0xFFFFFFFFFFFFFFFF}),
             }
         }
 
