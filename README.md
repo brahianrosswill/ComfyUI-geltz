@@ -28,6 +28,12 @@ Cosine-eased sigma schedule using the arctan(sigma) space for a non-linear noise
 
 ---
 
+### Kuwahara Blur (kwh)
+
+Fast, edge-preserving filter that works by selecting the mean color from one of four local quadrants that exhibits the minimum color variance. The implementation utilizes PyTorch tensor operations, including concatenated convolutions and one-hot encoding, to efficiently process all four quadrant means and variances simultaneously.
+
+---
+
 ### Quantile Match Scaling (qms)
 
 Prevents CFG oversaturation while preserving image structure. Rescales guidance (cond − uncond) by matching low, mid, and high frequency quantiles to the conditional distribution. Adapts per-band linear transformations with EMA smoothing and applies them in FFT space.
