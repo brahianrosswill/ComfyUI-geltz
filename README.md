@@ -1,6 +1,6 @@
 # ComfyUI-geltz
 
-Advanced ComfyUI nodes for guidance manipulation, latent/image operations, and flexible sampling control.
+Advanced nodes for guidance manipulation, latent/image operations, and flexible sampling control.
 
 ## Installation
 
