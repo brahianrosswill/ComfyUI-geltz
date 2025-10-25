@@ -72,7 +72,7 @@ Generates structured initial latents via gradient ascent on differentiable edge/
 
 ### Loaders
 
-**Lora Config (loracfg)**  
+**Lora Config (lcfg)**  
 Parses `.safetensors` header and extracts human-readable metadata as JSON.  
 *Output format compatible with [Kohya's sd-scripts](https://github.com/kohya-ss/sd-scripts)*
 
@@ -100,10 +100,10 @@ Non-linear sigma schedule interpolating in arctan space using cosine weighting.
 
 ### Tokens
 
-**tokenteller**  
+**tokenteller (tt)** 
 Visualizes token influence to detect prompt bleed via 2D wave path with normalized spikes.
 
-**vectorpusher**  
+**vectorpusher (vp)**  
 Strengthens prompt adherence by nudging CLIP embeddings toward soft top-k neighbor blends.  
 *Inspired by [Vector Sculptor](https://github.com/Extraltodeus/Vector_Sculptor_ComfyUI)*
 
@@ -114,6 +114,7 @@ Strengthens prompt adherence by nudging CLIP embeddings toward soft top-k neighb
 **ORBIT Merge (orbit)**  
 Direction-aware model merger decomposing deltas into parallel/orthogonal components with independent scaling.  
 *Uses the [sd-mecha](https://github.com/ljleb/sd-mecha) API*
+
 
 
 
