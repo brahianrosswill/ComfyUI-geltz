@@ -19,93 +19,82 @@ Restart ComfyUI after installation.
 Fast edge-preserving filter selecting mean color from the minimum-variance quadrant.
 
 **Local Laplacian Filter (llap)**  
-Halo-free, multi-scale detail/tone manipulation via Laplacian pyramids. Compresses large contrasts while boosting fine details; implemented with separable Gaussian blurs and pyramid ops.
+Halo-free detail/tone manipulation via Laplacian pyramids with separable Gaussian blurs.
 
 **L₀ Gradient Minimization (lzero)**  
-Global edge-aware smoothing that sparsifies image gradients to flatten regions while preserving sharp boundaries. Uses alternating hard-shrinkage on gradients with FFT-based Poisson.
+Global edge-aware smoothing that flattens regions while preserving sharp boundaries.
 
 **Temperature Adjust (tmp)**  
-LAB-space white-balance/temperature adjust with HSV saturation compensation. Warms (yellow–orange) or cools (blue–cyan) with bounded luminance changes; batch-safe and numerically clipped. Range -1.0…+1.0.
+LAB-space white-balance adjustment with HSV saturation compensation, range -1.0…+1.0.
 
 ### Guidance
 
 **Attention Shuffle Guidance (asg)**  
-Improves visual consistency by blending window-shuffled self-attention patterns during guided passes. Nudges output using RMS-normalized, rescaled deltas.
+Improves visual consistency by blending window-shuffled self-attention patterns during guided passes.
 
 **Quantile Match Scaling (qms)**  
-Prevents CFG oversaturation while preserving structure. Rescales guidance by matching frequency-band quantiles to the conditional distribution using EMA-smoothed FFT transformations.
+Prevents CFG oversaturation by matching frequency-band quantiles to conditional distribution.
 
 **Sigma-Weighted Shuffle (sws)**  
-Perturbs attention via controlled local shuffling of keys/values. Uses log-sigma progress, adaptive temperature scaling, and entropy-based blend strength with KL-bounded binary search.
+Perturbs attention via controlled local shuffling with adaptive temperature and entropy-based strength.
 
 **Token-Weighted Shuffle (tws)**  
-Remixes nearby tokens in entropy-selected attention heads using banded top-k within a shrinking window. Includes RMS matching, KL-bounded strength tuning, and optional query mirroring.  
+Remixes nearby tokens in entropy-selected attention heads using banded top-k within a shrinking window.  
 *Inspired by [Token Perturbation Guidance](https://arxiv.org/abs/2506.10036)*
 
 **Velocity Scaling (vs)**  
-Adapted from Epsilon Scaling for v-prediction models. Reduces over-brightening tendency in generated images.  
+Reduces over-brightening in v-prediction models via epsilon scaling adaptation.  
 *Based on [Elucidating the Exposure Bias in Diffusion Models](https://arxiv.org/abs/2308.15321)*
 
 ### Image
 
 **Color Palette Extractor (cpe)**  
-MiniBatchKMeans on sampled pixels to find N dominant colors. Outputs a palette image (strip or grid) and a CSV of hex codes for quick reuse.
+Extracts N dominant colors via MiniBatchKMeans and outputs palette image plus CSV of hex codes.
 
 **Image Metadata Extractor (ime.info)**  
-Reads PNG/TIFF info and outputs a normalized, readable prompt/settings summary as a single `STRING` (no image passthrough).
+Reads PNG/TIFF info and outputs normalized prompt/settings summary as a single string.
 
 **Load Image With Metadata (ime.load)**  
-Loads an image from `/input`, extracts embedded prompts/settings (Automatic1111, ComfyUI, or generic) into a unified text block, and returns `(IMAGE, MASK, STRING)` with alpha-inverted mask handling.
+Loads image from `/input` with embedded prompts/settings extraction, returns image, mask, and metadata text.
 
 ### Latents
 
 **Dithered Isotropic Latent (dil)**  
-Generates structured initial latents via gradient ascent on a differentiable score (edge detection, frequency energy, kurtosis, orientation coherence). Spectral variant adds per-channel seeding and frequency-domain shaping.
+Generates structured initial latents via gradient ascent on differentiable edge/frequency/orientation scores.
 
 ### Loaders
 
 **Lora Config (loracfg)**  
-Parses `.safetensors` header and extracts only human-readable metadata as JSON (filters out tensor entries). Returns `{ "metadata": { ... } }` for pipeline use.  
+Parses `.safetensors` header and extracts human-readable metadata as JSON.  
 *Output format compatible with [Kohya's sd-scripts](https://github.com/kohya-ss/sd-scripts)*
 
 ### Samplers
 
 **Adaptive Refined Euler Solver (ares)**  
-Deterministic sampler with momentum-aware steps and Heun integration. Auto-converts between prediction types (epsilon/x₀/v), batches sigma values, and clamps to valid ranges with Euler fallback.
+Deterministic sampler with momentum-aware steps, Heun integration, and auto-conversion between prediction types.
 
 **Adaptive Refined Euler Solver RDA (ares_rda)**  
-Enhanced variant using Residual-Delta Acceleration. Reuses the last two UNet predictions to boost speed when model changes are minimal.
+Enhanced variant using Residual-Delta Acceleration to boost speed when model changes are minimal.
 
 ### Schedulers
 
 **Cosine-Uniform Scheduler (csu)**  
-Cosine-eased sigma schedule for smooth denoising. Maps uniform samples via `w=((1−cos(πu))/2)^γ` to timesteps, enforcing monotonic decrease with capped endpoints.
+Cosine-eased sigma schedule for smooth denoising with monotonic decrease and capped endpoints.
 
 **Hybrid Cosine-Arctan Scheduler (hca)**  
-Non-linear sigma schedule operating in arctan space. Interpolates between `arctan(σ_max)` and `arctan(σ_min)` using cosine weighting for distinct noise reduction curves.
+Non-linear sigma schedule interpolating in arctan space using cosine weighting.
 
 ### Tokens
 
 **tokenteller**  
-Visualizes token influence to detect prompt bleed. Renders a 2D wave path with spikes proportional to each token's normalized influence (norm/variance/mean), outputting a colored curve with word-value labels.
+Visualizes token influence to detect prompt bleed via 2D wave path with normalized spikes.
 
 **vectorpusher**  
-Strengthens prompt adherence by nudging CLIP embeddings toward soft top-k neighbor blends using entropy-scaled trust-region optimization with KL bounds and angle constraints.  
+Strengthens prompt adherence by nudging CLIP embeddings toward soft top-k neighbor blends.  
 *Inspired by [Vector Sculptor](https://github.com/Extraltodeus/Vector_Sculptor_ComfyUI)*
 
 ### Utilities
 
 **ORBIT Merge (orbit)**  
-Direction-aware model merger decomposing source–base delta into parallel/orthogonal components. Scales components independently with per-tensor trust blending. Supports UNet/CLIP/LoRA state dicts and mixed precision.
+Direction-aware model merger decomposing deltas into parallel/orthogonal components with independent scaling.  
 *Uses the [sd-mecha](https://github.com/ljleb/sd-mecha) API*
-
-
-
-
-
-
-
-
-
-
-
