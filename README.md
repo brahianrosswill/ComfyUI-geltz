@@ -32,6 +32,8 @@ Remixes nearby tokens in entropy-selected attention heads using banded top-k wit
 Reduces over-brightening in v-prediction models via epsilon scaling adaptation.  
 *Based on [Elucidating the Exposure Bias in Diffusion Models](https://arxiv.org/abs/2308.15321)*
 
+---
+
 ### Image
 
 **Filters**
@@ -59,16 +61,22 @@ Reads PNG/TIFF info and outputs normalized prompt/settings summary as a single s
 **Load Image With Metadata (ime.load)**  
 Loads image from `/input` with embedded prompts/settings extraction, returns image, mask, and metadata text.
 
+---
+
 ### Latents
 
 **Dithered Isotropic Latent (dil)**  
 Generates structured initial latents via gradient ascent on differentiable edge/frequency/orientation scores.
+
+---
 
 ### Loaders
 
 **Lora Config (loracfg)**  
 Parses `.safetensors` header and extracts human-readable metadata as JSON.  
 *Output format compatible with [Kohya's sd-scripts](https://github.com/kohya-ss/sd-scripts)*
+
+---
 
 ### Samplers
 
@@ -78,6 +86,8 @@ Deterministic sampler with momentum-aware steps, Heun integration, and auto-conv
 **Adaptive Refined Euler Solver RDA (ares_rda)**  
 Enhanced variant using Residual-Delta Acceleration to boost speed when model changes are minimal.
 
+---
+
 ### Schedulers
 
 **Cosine-Uniform Scheduler (csu)**  
@@ -85,6 +95,8 @@ Cosine-eased sigma schedule for smooth denoising with monotonic decrease and cap
 
 **Hybrid Cosine-Arctan Scheduler (hca)**  
 Non-linear sigma schedule interpolating in arctan space using cosine weighting.
+
+---
 
 ### Tokens
 
@@ -95,10 +107,13 @@ Visualizes token influence to detect prompt bleed via 2D wave path with normaliz
 Strengthens prompt adherence by nudging CLIP embeddings toward soft top-k neighbor blends.  
 *Inspired by [Vector Sculptor](https://github.com/Extraltodeus/Vector_Sculptor_ComfyUI)*
 
+---
+
 ### Utilities
 
 **ORBIT Merge (orbit)**  
 Direction-aware model merger decomposing deltas into parallel/orthogonal components with independent scaling.  
 *Uses the [sd-mecha](https://github.com/ljleb/sd-mecha) API*
+
 
 
