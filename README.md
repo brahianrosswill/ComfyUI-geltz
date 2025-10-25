@@ -33,7 +33,7 @@ LAB-space white-balance/temperature adjust with HSV saturation compensation. War
 Improves visual consistency by blending window-shuffled self-attention patterns during guided passes. Nudges output using RMS-normalized, rescaled deltas.
 
 **CFG Limiter (limiter)**  
-Enhanced guidance limiter with smooth transitions and CFG-adaptive intervals.
+Enhanced guidance limiter with smooth transitions and CFG-adaptive intervals.  
 *Based on [Applying Guidance in a Limited Interval Improves Sample and Distribution Quality](https://arxiv.org/abs/2404.07724)*  
 
 **Quantile Match Scaling (qms)**  
@@ -102,6 +102,7 @@ Strengthens prompt adherence by nudging CLIP embeddings toward soft top-k neighb
 **ORBIT Merge (orbit)**  
 Direction-aware model merger decomposing source–base delta into parallel/orthogonal components. Scales components independently with per-tensor trust blending. Supports UNet/CLIP/LoRA state dicts and mixed precision.
 *Uses the [sd-mecha](https://github.com/ljleb/sd-mecha) API*
+
 
 
 
