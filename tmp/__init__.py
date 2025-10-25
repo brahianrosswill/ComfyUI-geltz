@@ -193,7 +193,7 @@ class tmp:
 
 
 NODE_CLASS_MAPPINGS = {
-    "Temperature Adjust": Temperature Adjust
+    "Temperature Adjust": tmp
 }
 
 NODE_DISPLAY_NAME_MAPPINGS = {
