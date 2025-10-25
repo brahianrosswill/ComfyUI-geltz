@@ -53,7 +53,7 @@ Adapted from Epsilon Scaling for v-prediction models. Reduces over-brightening t
 **Dithered Isotropic Latent (dil)**  
 Generates structured initial latents via gradient ascent on a differentiable score (edge detection, frequency energy, kurtosis, orientation coherence). Spectral variant adds per-channel seeding and frequency-domain shaping.
 
-**Kuwahara Blur (kwh)**  
+**Kuwahara Filter (kwh)**  
 Fast edge-preserving filter selecting mean color from the minimum-variance quadrant. Efficiently processes all quadrants simultaneously using batched tensor operations.
 
 ### Tokens
