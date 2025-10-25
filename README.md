@@ -48,7 +48,7 @@ Adapted from Epsilon Scaling for v-prediction models. Reduces over-brightening t
 
 ### Image
 
-**Color Palette Extractor (palette)**  
+**Color Palette Extractor (cpe)**  
 MiniBatchKMeans on sampled pixels to find N dominant colors. Outputs a palette image (strip or grid) and a CSV of hex codes for quick reuse.
 
 **Image Metadata Extractor (ime.info)**  
@@ -98,6 +98,7 @@ Strengthens prompt adherence by nudging CLIP embeddings toward soft top-k neighb
 **ORBIT Merge (orbit)**  
 Direction-aware model merger decomposing source–base delta into parallel/orthogonal components. Scales components independently with per-tensor trust blending. Supports UNet/CLIP/LoRA state dicts and mixed precision.
 *Uses the [sd-mecha](https://github.com/ljleb/sd-mecha) API*
+
 
 
 
