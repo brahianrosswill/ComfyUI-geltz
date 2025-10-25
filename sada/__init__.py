@@ -98,6 +98,8 @@ class SADAModelPatch:
     """
     SADA acceleration node for ComfyUI that patches the model to use
     stability-guided adaptive pruning during sampling.
+    This version adds **proper teardown/flush** so that when you disable
+    the node, any previously patched model is restored and all caches are cleared.
     """
 
     @classmethod
@@ -135,6 +137,36 @@ class SADAModelPatch:
     FUNCTION = "patch_model"
     CATEGORY = "model_patches/acceleration"
 
+    @staticmethod
+    def _unpatch_if_present(model):
+        """
+        If the incoming model (or its underlying UNet) was previously patched
+        by SADA, restore the original apply_model and clear state.
+        """
+        # Prefer storing the original on the UNet to survive model cloning
+        unet = getattr(model, "model", None)
+        if unet is not None and getattr(unet, "_sada_wrapped", False):
+            try:
+                # Clear accelerator state if present
+                acc = getattr(unet, "_sada_accelerator", None)
+                if acc is not None:
+                    acc.reset()
+                # Restore apply_model
+                orig = getattr(unet, "_sada_original_apply_model", None)
+                if orig is not None:
+                    unet.apply_model = orig
+                # Drop flags/attrs
+                for attr in ["_sada_wrapped", "_sada_original_apply_model", "_sada_accelerator"]:
+                    if hasattr(unet, attr):
+                        delattr(unet, attr)
+                # Also clear convenience attrs on the outer model
+                for attr in ["sada_reset", "sada_unpatch", "sada_active"]:
+                    if hasattr(model, attr):
+                        delattr(model, attr)
+                print("[SADA] Unpatched previous wrapper and flushed state.")
+            except Exception as e:
+                print(f"[SADA] Warning: attempted to unpatch but hit: {e}")
+
     def patch_model(
         self,
         model,
@@ -145,19 +177,25 @@ class SADAModelPatch:
     ):
         """
         Applies SADA patch to the model using ComfyUI's model patcher.
+        Also guarantees that disabling the node *fully* restores the model.
         """
+        # If the model (or its shared UNet) is already wrapped from a previous run,
+        # clean it up first to avoid double-wrapping or lingering effects.
+        self._unpatch_if_present(model)
+
         if not enable_acceleration:
-            print("[SADA] Acceleration disabled, returning original model")
+            print("[SADA] Acceleration disabled. Ensured any previous patch is removed.")
             return (model,)
 
-        # Clone model to avoid modifying original
+        # Clone model to avoid modifying original instance wiring in the graph
         patched_model = model.clone()
 
         # Create accelerator instance (pass all args)
         accelerator = SADAAccelerator(enable_acceleration, stability_threshold, max_consecutive_skips)
 
-        # Store original apply_model function
-        original_apply_model = patched_model.model.apply_model
+        # Store original apply_model function on the UNet object itself
+        unet = patched_model.model
+        original_apply_model = unet.apply_model
 
         def sada_apply_model(x, t, c_concat=None, c_crossattn=None, control=None, transformer_options=None, **kwargs):
             """Wrapped apply_model that implements SADA acceleration."""
@@ -173,7 +211,7 @@ class SADAModelPatch:
                     accelerator.skipped_steps += 1
                     accelerator.mark_skipped()
                     if accelerator.total_steps % 10 == 0:
-                        skip_ratio = accelerator.skipped_steps / accelerator.total_steps
+                        skip_ratio = accelerator.skipped_steps / max(1, accelerator.total_steps)
                         print(f"[SADA] Step {accelerator.total_steps}: Skipped {accelerator.skipped_steps}/{accelerator.total_steps} ({skip_ratio:.1%} acceleration)")
                     return cached
 
@@ -195,17 +233,27 @@ class SADAModelPatch:
 
             return output
 
-        # Patch the model
-        patched_model.model.apply_model = sada_apply_model
+        # Patch the model (bind on the UNet to ensure single point of truth)
+        unet.apply_model = sada_apply_model
+        # Mark & keep handles on the UNet so we can unpatch even if the outer
+        # ModelPatcher instance isn't the same object on future runs
+        unet._sada_wrapped = True
+        unet._sada_original_apply_model = original_apply_model
+        unet._sada_accelerator = accelerator
 
-        # Add callback to reset accelerator state before sampling
+        # Add callbacks to reset/unpatch accelerator state
         def reset_callback():
             accelerator.reset()
             print(f"[SADA] Initialized with threshold={stability_threshold}, min_steps={min_steps_before_skip}, max_consecutive_skips={max_consecutive_skips}")
 
-        # Store reset function for potential use
-        if not hasattr(patched_model, 'sada_reset'):
-            patched_model.sada_reset = reset_callback
+        def unpatch_callback():
+            # Allow users or other nodes to explicitly drop the wrapper
+            self._unpatch_if_present(patched_model)
+
+        # Expose helpers on the outer model
+        patched_model.sada_reset = reset_callback
+        patched_model.sada_unpatch = unpatch_callback
+        patched_model.sada_active = True
 
         # Reset now for immediate use
         reset_callback()
@@ -216,7 +264,6 @@ class SADAModelPatch:
         print(f"  - Max consecutive skips: {max_consecutive_skips}")
 
         return (patched_model,)
-
 
 
 class SADAInfo:
