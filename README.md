@@ -56,10 +56,10 @@ Generates structured initial latents via gradient ascent on a differentiable sco
 **Kuwahara Filter (kwh)**  
 Fast edge-preserving filter selecting mean color from the minimum-variance quadrant. Efficiently processes all quadrants simultaneously using batched tensor operations.
 
-**L₀ Gradient Minimization (lzero)**
+**L₀ Gradient Minimization (lzero)**  
 Global edge-aware smoothing that sparsifies image gradients to flatten regions while preserving sharp boundaries. Uses alternating hard-shrinkage on gradients with FFT-based Poisson solves for fast, batched convergence.
 
-**Local Laplacian Filter (llap)**
+**Local Laplacian Filter (llap)**  
 Halo-free, multi-scale detail/tone manipulation via Laplacian pyramids. Compresses large contrasts while boosting fine details; implemented with separable Gaussian blurs and pyramid ops using batched tensors.
 
 ### Tokens
