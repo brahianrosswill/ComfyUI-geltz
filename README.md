@@ -53,14 +53,18 @@ Adapted from Epsilon Scaling for v-prediction models. Reduces over-brightening t
 **Dithered Isotropic Latent (dil)**  
 Generates structured initial latents via gradient ascent on a differentiable score (edge detection, frequency energy, kurtosis, orientation coherence). Spectral variant adds per-channel seeding and frequency-domain shaping.
 
+### Filters
+
+All filters listed below use batched tensor operations for speed.
+
 **Kuwahara Filter (kwh)**  
-Fast edge-preserving filter selecting mean color from the minimum-variance quadrant. Efficiently processes all quadrants simultaneously using batched tensor operations.
+Fast edge-preserving filter selecting mean color from the minimum-variance quadrant.
 
 **L₀ Gradient Minimization (lzero)**  
-Global edge-aware smoothing that sparsifies image gradients to flatten regions while preserving sharp boundaries. Uses alternating hard-shrinkage on gradients with FFT-based Poisson solves for fast, batched convergence.
+Global edge-aware smoothing that sparsifies image gradients to flatten regions while preserving sharp boundaries. Uses alternating hard-shrinkage on gradients with FFT-based Poisson.
 
 **Local Laplacian Filter (llap)**  
-Halo-free, multi-scale detail/tone manipulation via Laplacian pyramids. Compresses large contrasts while boosting fine details; implemented with separable Gaussian blurs and pyramid ops using batched tensors.
+Halo-free, multi-scale detail/tone manipulation via Laplacian pyramids. Compresses large contrasts while boosting fine details; implemented with separable Gaussian blurs and pyramid ops.
 
 ### Tokens
 
