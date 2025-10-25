@@ -11,8 +11,6 @@ class CFGLimiter(ComfyNodeABC):
     Enhanced guidance limiter with smooth transitions and CFG-adaptive intervals.
     Based on "Applying Guidance in a Limited Interval Improves Sample and Distribution Quality"
     by Kynkäänniemi et al.
-    
-    Corrected and optimized version.
     """
     
     # Hyperparameters - tuned for optimal quality/efficiency trade-off
@@ -142,7 +140,7 @@ class CFGLimiter(ComfyNodeABC):
             if weight == 1.0:
                 return x_cfg
             
-            # CRITICAL FIX: Interpolate between unconditional and guided result
+            # Interpolate between unconditional and guided result
             return uncond + weight * (x_cfg - uncond)
 
         m = model.clone()
