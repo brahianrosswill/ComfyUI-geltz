@@ -25,8 +25,8 @@ Prevents CFG oversaturation by matching frequency-band quantiles to conditional 
 Perturbs attention via controlled local shuffling with adaptive temperature and entropy-based strength.
 
 **SADA Model Acceleration (sada)**  
-Skip redundant diffusion steps using trajectory stability analysis for faster sampling.
-*Based on [Stability-guided Adaptive Diffusion Acceleration](https://arxiv.org/abs/2507.17135)*
+Skip redundant diffusion steps using trajectory stability analysis for faster sampling.  
+*Based on [Stability-guided Adaptive Diffusion Acceleration](https://arxiv.org/abs/2507.17135)*  
 
 **Token-Weighted Shuffle (tws)**  
 Remixes nearby tokens in entropy-selected attention heads using banded top-k within a shrinking window.  
@@ -118,6 +118,7 @@ Strengthens prompt adherence by nudging CLIP embeddings toward soft top-k neighb
 **ORBIT Merge (orbit)**  
 Direction-aware model merger decomposing deltas into parallel/orthogonal components with independent scaling.  
 *Uses the [sd-mecha](https://github.com/ljleb/sd-mecha) API*
+
 
 
 
