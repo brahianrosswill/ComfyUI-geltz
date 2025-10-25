@@ -1,7 +1,7 @@
 import torch
 import numpy as np
 
-class Temperature Adjust:
+class tmp:
     
     @classmethod
     def INPUT_TYPES(cls):
