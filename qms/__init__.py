@@ -157,9 +157,11 @@ def _adaptive_quantiles(x, num_quantiles=7):
 
 def _dynamic_rescale(cfg_value, base_rescale=0.75):
     import math
-    k, x0 = 0.6, 5.0
+    # More aggressive curve at high CFG values
+    k, x0 = 0.8, 4.0
     s = 1.0 / (1.0 + math.exp(-k * (float(cfg_value) - x0)))
-    return min(base_rescale + 0.2 * s, 0.95)
+    # Lower ceiling to prevent oversaturation
+    return min(base_rescale * (0.6 + 0.3 * s), 0.85)
 
 
 def _safe_rms(x):
@@ -221,12 +223,17 @@ class QMS(io.ComfyNode):
             one = torch.tensor(1.0, device=cond.device, dtype=cond.dtype)
             zero = torch.tensor(0.0, device=cond.device, dtype=cond.dtype)
             rescale_eff = _dynamic_rescale(w_cfg, base_rescale=rescale)
-            a_low = one + rescale_eff * (a_low0.to(device=cond.device, dtype=cond.dtype) - one)
-            b_low = zero + rescale_eff * b_low0.to(device=cond.device, dtype=cond.dtype)
-            a_mid = one + rescale_eff * (a_mid0.to(device=cond.device, dtype=cond.dtype) - one)
-            b_mid = zero + rescale_eff * b_mid0.to(device=cond.device, dtype=cond.dtype)
-            a_high = one + rescale_eff * (a_high0.to(device=cond.device, dtype=cond.dtype) - one)
-            b_high = zero + rescale_eff * b_high0.to(device=cond.device, dtype=cond.dtype)
+            
+            # Frequency-dependent dampening to reduce oversaturation
+            freq_weights = torch.tensor([1.0, 0.8, 0.65], device=cond.device)
+            
+            a_low = one + freq_weights[0] * rescale_eff * (a_low0.to(device=cond.device, dtype=cond.dtype) - one)
+            b_low = zero + freq_weights[0] * rescale_eff * b_low0.to(device=cond.device, dtype=cond.dtype)
+            a_mid = one + freq_weights[1] * rescale_eff * (a_mid0.to(device=cond.device, dtype=cond.dtype) - one)
+            b_mid = zero + freq_weights[1] * rescale_eff * b_mid0.to(device=cond.device, dtype=cond.dtype)
+            a_high = one + freq_weights[2] * rescale_eff * (a_high0.to(device=cond.device, dtype=cond.dtype) - one)
+            b_high = zero + freq_weights[2] * rescale_eff * b_high0.to(device=cond.device, dtype=cond.dtype)
+            
             if state["ema_a_low"] is None:
                 a_low, a_mid, a_high = a_low.clamp_min(0.2), a_mid.clamp_min(0.2), a_high.clamp_min(0.2)
                 state["ema_a_low"], state["ema_b_low"] = a_low.detach(), b_low.detach()
@@ -245,9 +252,26 @@ class QMS(io.ComfyNode):
                 b_mid = torch.clamp(b_mid, state["ema_b_mid"] / r, state["ema_b_mid"] * r)
                 a_high = torch.clamp(a_high, state["ema_a_high"] / r, state["ema_a_high"] * r)
                 b_high = torch.clamp(b_high, state["ema_b_high"] / r, state["ema_b_high"] * r)
+            
+            # Tighter clamping to prevent extreme adjustments
+            a_low = a_low.clamp(0.6, 1.4)
+            a_mid = a_mid.clamp(0.7, 1.3)
+            a_high = a_high.clamp(0.75, 1.25)
+            
+            # Also clamp bias terms
+            b_low = b_low.clamp(-0.1, 0.1)
+            b_mid = b_mid.clamp(-0.08, 0.08)
+            b_high = b_high.clamp(-0.05, 0.05)
+            
             g_scaled = _apply_qms(g, a_low, b_low, a_mid, b_mid, a_high, b_high, masks)
+            
+            # Apply winsorization to clip extreme outliers
+            g_scaled = _winsor(g_scaled, p=99.5)
+            
             base_rms, scaled_rms = _safe_rms(g), _safe_rms(g_scaled)
-            cap = 1.0 + 0.5 * rescale_eff
+            
+            # More conservative cap that adapts to CFG strength
+            cap = max(0.75, 1.1 - 0.05 * w_cfg) * rescale_eff
             scale = torch.clamp(cap * base_rms / (scaled_rms + 1e-12), max=1.0)
             cond_new = torch.nan_to_num(uncond + g_scaled * scale, nan=0.0, posinf=0.0, neginf=0.0).to(cond.dtype)
             state["iter"] += 1
