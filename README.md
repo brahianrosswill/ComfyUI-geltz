@@ -53,16 +53,35 @@ Adapted from Epsilon Scaling for v-prediction models. Reduces over-brightening t
 **Dithered Isotropic Latent (dil)**  
 Generates structured initial latents via gradient ascent on a differentiable score (edge detection, frequency energy, kurtosis, orientation coherence). Spectral variant adds per-channel seeding and frequency-domain shaping.
 
+### Loaders
+
+**Lora Config (loracfg)**  
+Parses `.safetensors` header and extracts only human-readable metadata as JSON (filters out tensor entries). Returns `{ "metadata": { ... } }` for clean pipeline use.
+
+### Image
+
+**Color Palette Extractor (palette)**  
+MiniBatchKMeans on sampled pixels to find N dominant colors. Outputs a palette image (strip or grid) and a CSV of hex codes for quick reuse.
+
+**Image Metadata Extractor (imeta.info)**  
+Reads PNG/TIFF info and outputs a normalized, readable prompt/settings summary as a single `STRING` (no image passthrough).
+
+**Load Image With Metadata (imeta.load)**  
+Loads an image from `/input`, extracts embedded prompts/settings (Automatic1111, ComfyUI, or generic) into a unified text block, and returns `(IMAGE, MASK, STRING)` with alpha-inverted mask handling.
+
 ### Filters
 
 **Kuwahara Filter (kwh)**  
 Fast edge-preserving filter selecting mean color from the minimum-variance quadrant.
 
+**Local Laplacian Filter (llap)**  
+Halo-free, multi-scale detail/tone manipulation via Laplacian pyramids. Compresses large contrasts while boosting fine details; implemented with separable Gaussian blurs and pyramid ops.
+
 **L₀ Gradient Minimization (lzero)**  
 Global edge-aware smoothing that sparsifies image gradients to flatten regions while preserving sharp boundaries. Uses alternating hard-shrinkage on gradients with FFT-based Poisson.
 
-**Local Laplacian Filter (llap)**  
-Halo-free, multi-scale detail/tone manipulation via Laplacian pyramids. Compresses large contrasts while boosting fine details; implemented with separable Gaussian blurs and pyramid ops.
+**Temperature Adjust (temper)**  
+LAB-space white-balance/temperature adjust with HSV saturation compensation. Warms (yellow–orange) or cools (blue–cyan) with bounded luminance changes; batch-safe and numerically clipped. Range -1.0…+1.0.
 
 ### Tokens
 
