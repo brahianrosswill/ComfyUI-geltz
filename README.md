@@ -77,4 +77,4 @@ Strengthens prompt adherence by nudging CLIP embeddings toward soft top-k neighb
 
 **ORBIT Merge (orbit)**  
 Direction-aware model merger decomposing source–base delta into parallel/orthogonal components. Scales components independently with per-tensor trust blending. Supports UNet/CLIP/LoRA state dicts and mixed precision.
-*Uses the [sd-mecha](https://github.com/ljleb/sd-mecha) api*
+*Uses the [sd-mecha](https://github.com/ljleb/sd-mecha) API*
