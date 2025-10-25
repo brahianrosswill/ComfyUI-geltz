@@ -153,7 +153,7 @@ def _timestep_ratio(t):
     return float(max(0.0, min(1.0, r)))
 
 
-def _apply_asg(unet_apply, params, s, rescale, seed):
+def _apply_asg(unet_apply, params, s, rescale, seed, window):
     s = 0.0 if (not math.isfinite(s) or s < 0.0) else float(s)
     rescale = 0.0 if (not math.isfinite(rescale) or rescale < 0.0) else float(rescale)
 
@@ -161,19 +161,29 @@ def _apply_asg(unet_apply, params, s, rescale, seed):
     if s == 0.0:
         return base
 
+    # Step ratio and effective strength
     ratio = _timestep_ratio(params.get("timestep", 0.0))
     s_eff = s * (ratio ** 0.7)
     if s_eff <= 0.0:
         return base
 
+    # Derive a stable-but-changing tag from the current diffusion step to decorrelate shuffles
+    try:
+        tt = torch.as_tensor(params.get("timestep", 0.0), dtype=torch.float32)
+        step_tag = int(tt.detach().abs().max().item())
+    except Exception:
+        step_tag = 0
+
+    # Number of ASG evaluations
     N_min, N_max = 1, 4
     Nf = N_min + (N_max - N_min) * (1.0 - ratio)
     N = int(max(N_min, min(N_max, round(Nf))))
 
     mean = None
     for i in range(N):
-        si = int(seed + i * 2654435761)
-        with _SDPAPerturb(s_eff, window=0, seed=si):
+        # Seed now varies across i AND across diffusion steps
+        si = int(seed + step_tag * 9973 + i * 2654435761)
+        with _SDPAPerturb(s_eff, window=window, seed=si):
             y = _eps(unet_apply, params)
         if mean is None:
             mean = y
@@ -188,15 +198,15 @@ def _apply_asg(unet_apply, params, s, rescale, seed):
     delta = _rms_clamp(delta, base, tau=0.7)
     return _safe(base + s_eff * delta)
 
-
 class _ASGWrapper:
-    def __init__(self, strength, rescale, seed):
+    def __init__(self, strength, rescale, seed, window):
         self.s = float(strength)
         self.rescale = float(rescale)
         self.seed = int(seed)
+        self.window = int(window)
 
     def __call__(self, unet_apply, params):
-        return _apply_asg(unet_apply, params, self.s, self.rescale, self.seed)
+        return _apply_asg(unet_apply, params, self.s, self.rescale, self.seed, self.window)
 
 
 class AttentionShuffleGuidanceModelPatch:
@@ -208,6 +218,8 @@ class AttentionShuffleGuidanceModelPatch:
                 "strength": ("FLOAT", {"default": 0.25, "min": 0.0, "max": 2.0, "step": 0.05}),
                 "rescale": ("FLOAT", {"default": 0.5, "min": 0.0, "max": 1.0, "step": 0.05}),
                 "seed": ("INT", {"default": 42, "min": 0, "max": 0xFFFFFFFFFFFFFFFF}),
+                # 0 => dynamic sqrt(L); 1 => no shuffle; >=L => global shuffle
+                "window": ("INT", {"default": 0, "min": 0, "max": 1_000_000}),
             }
         }
 
@@ -215,10 +227,11 @@ class AttentionShuffleGuidanceModelPatch:
     FUNCTION = "patch"
     CATEGORY = "model/patches"
 
-    def patch(self, model, strength, rescale, seed):
+    def patch(self, model, strength, rescale, seed, window):
         m = model.clone()
-        m.set_model_unet_function_wrapper(_ASGWrapper(strength, rescale, seed))
+        m.set_model_unet_function_wrapper(_ASGWrapper(strength, rescale, seed, window))
         return (m,)
+
 
 
 NODE_CLASS_MAPPINGS = {
