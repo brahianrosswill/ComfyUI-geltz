@@ -1,83 +1,75 @@
-### Adaptive Refined Euler Solver (ares)
+# ComfyUI-geltz
 
-Deterministic sampler for controlled denoising with momentum-aware steps. Batches sigma values, auto-converts between epsilon/x₀/v predictions, computes delta-t intervals, and applies Heun integration to advance the latent while estimating the clean image. Clamps sigma to valid ranges and falls back to Euler method when needed.
+Advanced ComfyUI nodes for guidance manipulation, latent operations, and flexible sampling control.
 
-Includes a variant (ares_rda) that minimally increases sampling speed, using an algorithm named Residual-Delta Acceleration which reuses the last two UNet predictions to predict the next one when the model’s change is small.
+## Installation
 
----
+```bash
+cd ComfyUI/custom_nodes
+git clone https://github.com/geltz/ComfyUI-geltz.git
+```
 
-### Attention Shuffle Guidance (asg)
+Restart ComfyUI after installation.
 
-Improves visual consistency in generated images. Hooks self-attention to blend window-shuffled patterns during a guided pass, then nudges the base output using a rescaled delta clamped by RMS normalization.
+## Nodes
 
----
+### Samplers
 
-### Cosine-Uniform Scheduler (csu)
+**Adaptive Refined Euler Solver (ares)**  
+Deterministic sampler with momentum-aware steps and Heun integration. Auto-converts between prediction types (epsilon/x₀/v), batches sigma values, and clamps to valid ranges with Euler fallback.
 
-Cosine-eased sigma schedule for smoother denoising transitions. Maps uniform samples through w=((1−cos(πu))/2)^γ to timesteps, converts to sigmas, enforces monotonic decrease, and caps endpoints at σ_max and zero.
+**Adaptive Refined Euler Solver RDA (ares_rda)**  
+Enhanced variant using Residual-Delta Acceleration—reuses the last two UNet predictions to boost speed when model changes are minimal.
 
----
+### Schedulers
 
-### Dithered Isotropic Latent (dil)
+**Cosine-Uniform Scheduler (csu)**  
+Cosine-eased sigma schedule for smooth denoising. Maps uniform samples via `w=((1−cos(πu))/2)^γ` to timesteps, enforcing monotonic decrease with capped endpoints.
 
-Generates structured initial latents instead of pure noise. Optimizes noise through gradient ascent on a differentiable score combining edge detection, high-frequency energy, kurtosis, and orientation coherence. The spectral variant adds per-channel seeding and frequency-domain shaping via beta and spectral_mix parameters.
+**Hybrid Cosine-Arctan Scheduler (hca)**  
+Non-linear sigma schedule operating in arctan space. Interpolates between `arctan(σ_max)` and `arctan(σ_min)` using cosine weighting for distinct noise reduction curves.
 
----
+### Guidance
 
-### Hybrid Cosine-Arctan Scheduler (hca)
+**Attention Shuffle Guidance (asg)**  
+Improves visual consistency by blending window-shuffled self-attention patterns during guided passes. Nudges output using RMS-normalized, rescaled deltas.
 
-Cosine-eased sigma schedule using the arctan(sigma) space for a non-linear noise reduction curve. Interpolates arctan(sigma\_max) and arctan(sigma\_min) using the w=((1−cos(pi u))/2)\^gamma weight, then converts back to sigmas, enforces monotonic decrease, and caps endpoints at sigma\_max and zero.
+**Quantile Match Scaling (qms)**  
+Prevents CFG oversaturation while preserving structure. Rescales guidance by matching frequency-band quantiles to the conditional distribution using EMA-smoothed FFT transformations.
 
----
+**Sigma-Weighted Shuffle (sws)**  
+Perturbs attention via controlled local shuffling of keys/values. Uses log-sigma progress, adaptive temperature scaling, and entropy-based blend strength with KL-bounded binary search.
 
-### Kuwahara Blur (kwh)
+**Token-Weighted Shuffle (tws)**  
+Remixes nearby tokens in entropy-selected attention heads using banded top-k within a shrinking window. Includes RMS matching, KL-bounded strength tuning, and optional query mirroring.  
+*Inspired by [Token Perturbation Guidance](https://github.com/TaatiTeam/Token-Perturbation-Guidance)*
 
-Fast, edge-preserving filter that works by selecting the mean color from one of four local quadrants that exhibits the minimum color variance. The implementation utilizes PyTorch tensor operations, including concatenated convolutions and one-hot encoding, to efficiently process all four quadrant means and variances simultaneously.
+**Velocity Scaling (vs)**  
+Adapted from Epsilon Scaling for v-prediction models. Reduces over-brightening tendency in generated images.  
+*Based on [Elucidating the Exposure Bias in Diffusion Models](https://arxiv.org/abs/2308.15321)*
 
----
+### Latents
 
-### ORBIT Merge (orbit)
+**Dithered Isotropic Latent (dil)**  
+Generates structured initial latents via gradient ascent on a differentiable score (edge detection, frequency energy, kurtosis, orientation coherence). Spectral variant adds per-channel seeding and frequency-domain shaping.
 
-Direction-aware weight merger that decomposes the source–base delta into components parallel and orthogonal to the base, scales them by alpha_parallel and alpha_perp, then blends per-tensor using a trust factor. Implemented with PyTorch vector ops (batched norms, safe normalization with epsilon, optional coefficient clipping) to process all parameters efficiently.
+**Kuwahara Blur (kwh)**  
+Fast edge-preserving filter selecting mean color from the minimum-variance quadrant. Efficiently processes all quadrants simultaneously using batched tensor operations.
 
-Adds the novelty of model_b onto model_a. Preserves core behavior by favoring shared directions while allowing controlled novelty along orthogonal directions; supports UNet/CLIP/LoRA state dicts and mixed precision.
+### Tokens
 
----
+**tokenteller**  
+Visualizes token influence to detect prompt bleed. Renders a 2D wave path with spikes proportional to each token's normalized influence (norm/variance/mean), outputting a colored curve with word-value labels.
 
-### Quantile Match Scaling (qms)
+**vectorpusher**  
+Strengthens prompt adherence by nudging CLIP embeddings toward soft top-k neighbor blends using entropy-scaled trust-region optimization with KL bounds and angle constraints.  
+*Inspired by [Vector Sculptor](https://github.com/Extraltodeus/Vector_Sculptor_ComfyUI)*
 
-Prevents CFG oversaturation while preserving image structure. Rescales guidance (cond − uncond) by matching low, mid, and high frequency quantiles to the conditional distribution. Adapts per-band linear transformations with EMA smoothing and applies them in FFT space.
+### Utilities
 
----
+**ORBIT Merge (orbit)**  
+Direction-aware model merger decomposing source–base delta into parallel/orthogonal components. Scales components independently with per-tensor trust blending. Supports UNet/CLIP/LoRA state dicts and mixed precision.
 
-### Sigma-Weighted Shuffle (sws)
+## License
 
-Perturbs attention with controlled local shuffling of keys/values. Derives normalized progress from log-sigma, scales queries/keys with adaptive temperature, and estimates attention entropy to set blend strength. Builds block-wise cyclic permutations that shrink during denoising, selecting blend weights via KL-bounded binary search. Handles dimension mismatches with orthonormal projections.
-
----
-
-### tokenteller
-
-Visualizes token influence to detect prompt bleed. Extracts token embeddings from conditioning, computes per-token values via norm/variance/mean normalized to [0,1], and renders a 2D wave path with spikes proportional to each token's influence. Outputs colored curve with viridis-like gradient and labeled word-value pairs.
-
----
-
-### Token-Weighted Shuffle (tws)
-
-Perturbs attention by remixing nearby tokens in entropy-selected heads. Mixes k/v inside a shrinking window via banded top-k, preserves scale with RMS matching, and sets strengths with KL-bounded search. Intensity and phase set token fraction, noise, and budgets, while optional query mirroring plus cached permutations and orthogonal projections.
-
-Inspired by [Token Perturbation Guidance](https://github.com/TaatiTeam/Token-Perturbation-Guidance).
-
----
-
-### vectorpusher
-
-Strengthens prompt adherence by refining token embeddings. Nudges each CLIP token embedding toward a soft top-k neighbor blend using entropy and attention-scaled trust-region optimization with KL bounds and angle constraints.
-
-Inspired by [Vector Sculptor](https://github.com/Extraltodeus/Vector_Sculptor_ComfyUI).
-
----
-
-### Velocity Scaling (vs)
-
-Modification of the Epsilon Scaling algorithm found in [Elucidating the Exposure Bias in Diffusion Models](https://arxiv.org/abs/2308.15321) specifically made for v-prediction models. Lowers tendency to over-brighten images.
+Check the repository for license information.
