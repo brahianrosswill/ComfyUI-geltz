@@ -19,7 +19,7 @@ Restart ComfyUI after installation.
 Deterministic sampler with momentum-aware steps and Heun integration. Auto-converts between prediction types (epsilon/x₀/v), batches sigma values, and clamps to valid ranges with Euler fallback.
 
 **Adaptive Refined Euler Solver RDA (ares_rda)**  
-Enhanced variant using Residual-Delta Acceleration—reuses the last two UNet predictions to boost speed when model changes are minimal.
+Enhanced variant using Residual-Delta Acceleration. Reuses the last two UNet predictions to boost speed when model changes are minimal.
 
 ### Schedulers
 
