@@ -11,8 +11,6 @@ git clone https://github.com/geltz/ComfyUI-geltz.git
 
 Restart ComfyUI after installation.
 
-### Nodes
-
 ---
 
 ### Guidance
@@ -116,6 +114,7 @@ Strengthens prompt adherence by nudging CLIP embeddings toward soft top-k neighb
 **ORBIT Merge (orbit)**  
 Direction-aware model merger decomposing deltas into parallel/orthogonal components with independent scaling.  
 *Uses the [sd-mecha](https://github.com/ljleb/sd-mecha) API*
+
 
 
 
