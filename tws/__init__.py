@@ -122,16 +122,17 @@ class TWS:
             key = (S, ib, pb, cf, _dev_key(dev)); p = perm_cache.get(key)
             if p is not None: return p
             gen = torch.Generator(device=dev); gen.manual_seed(_stable_seed(seed, S, ib, pb, cf, "perm", _dev_key(dev)))
-            sigma = max(1.0, float(S) * (0.06 + 0.22 * float(intensity)) * (phase ** 0.5) * (1.0 - 0.6 * float(cfg_fac)))
+            sigma = max(1.0, float(S) * (0.20 + 0.70 * (float(intensity) ** 0.75)) * (phase ** 0.5) * (1.0 - 0.5 * float(cfg_fac)))
             noise = torch.randn(S, device=dev, dtype=torch.float32, generator=gen) * sigma; noise = _tri_smooth(noise, 1 + int(2 * float(cfg_fac)))
             idx = torch.argsort(torch.arange(S, device=dev, dtype=torch.float32) + noise, dim=0); perm_cache.put(key, idx); return idx
 
         def _shuffle_tokens(k, v, intensity, phase, cfg_fac):
             idx = _perm_indices(k.shape[1], intensity, phase, k.device, cfg_fac); return k.index_select(1, idx), v.index_select(1, idx)
 
+        # Allow more heads to be affected
         def _entropy_head_mask_percentile(A, intensity):
             eps = 1e-12; H = -(A.clamp_min(eps) * A.clamp_min(eps).log()).sum(dim=-1).mean(dim=-1)
-            q = 1.0 - (0.15 + 0.55 * float(intensity)); thr = torch.quantile(H.float(), q); return H <= thr
+            q = 1.0 - (0.25 + 0.65 * float(intensity)); thr = torch.quantile(H.float(), q); return H <= thr
 
         def tws(q, k, v, extra):
             if q.dim() == 4: q = q.reshape(q.shape[0] * q.shape[1], q.shape[2], q.shape[3])
@@ -148,23 +149,23 @@ class TWS:
             t = float(extra.get("timestep", 0)); T = float(extra.get("total_timesteps", max(t, 1))); phase = 1.0 - (t / T)
             A0_sel = baseline_attn(q_sel, k_sel, sample_max_q=q_sel.shape[1], sample_max_k=k_sel.shape[1])
             a_base_vec = alpha_base_from_entropy(A0_sel); I_k, conc = importance_from_A(A0_sel)
-            p = (0.12 + 0.22 * I) * (1.0 - 0.25 * cfg_fac); k_tokens = max(1, int(math.ceil(p * S)))
+            p = min(0.55, (0.20 + 0.50 * I) * (1.0 - 0.20 * cfg_fac)); k_tokens = max(1, int(math.ceil(p * S)))
             tau = 0.25 + 0.75 * (1.0 - I) + 0.50 * cfg_fac
             gate_k_w = (I_k / tau).softmax(dim=-1) * (k_tokens / float(S)) * S
             gate_k_w = _smooth_tokens(gate_k_w.unsqueeze(-1), 2 + int(3 * cfg_fac)).squeeze(-1).clamp(0.0, 1.0)
             k_perm, v_perm = _shuffle_tokens(k_sel, v_sel, I, phase, cfg_fac)
             k_mix, v_mix = rms_match(k_perm, k_sel), rms_match(v_perm, v_sel)
-            noise_k_strength = 0.10 * I * (0.5 + 0.5 * conc) * (phase ** 0.25) * (1.0 - 0.70 * cfg_fac)
-            noise_v_strength = 0.06 * I * (0.5 + 0.5 * conc) * (phase ** 0.25) * (1.0 - 0.70 * cfg_fac)
+            noise_k_strength = 0.25 * I * (0.5 + 0.5 * conc) * (phase ** 0.25) * (1.0 - 0.50 * cfg_fac)
+            noise_v_strength = 0.18 * I * (0.5 + 0.5 * conc) * (phase ** 0.25) * (1.0 - 0.50 * cfg_fac)
             k_mix, v_mix = orthogonal_noise(k_mix, I_k, noise_k_strength, "k"), orthogonal_noise(v_mix, I_k, noise_v_strength, "v")
-            kl_cap = 1.6 * (0.10 + 0.25 * I) * (phase ** 0.5) * (1.0 - 0.3 * cfg_fac)
-            a_k_max = min(0.70, 0.45 + 0.25 * I) * (1.0 - 0.50 * cfg_fac)
-            cap_scale = a_base_vec.clamp_min(0.08).clamp_max(1.0).to(torch.float32)
+            kl_cap = 2.5 * (0.10 + 0.25 * I) * (phase ** 0.5) * (1.0 - 0.3 * cfg_fac)
+            a_k_max = min(0.90, 0.45 + 0.25 * I) * (1.0 - 0.50 * cfg_fac)
+            cap_scale = torch.ones_like(a_base_vec)
             a_k_vec = bsearch_alpha_vec_mix_k(q_sel, k_sel, A0_sel, k_mix, cap_scale * a_k_max, kl_cap, 6)
-            a_v_base = 0.75 * ((0.6 + 0.4 * I) * (0.4 + 0.6 * conc))
+            a_v_base = 1.0 * ((0.8 + 0.2 * I) * (0.6 + 0.4 * conc))
             a_v_vec = (a_v_base * cap_scale * (a_k_vec / (cap_scale * a_k_max + 1e-6))).clamp(0.0, 1.0)
-            dk, dv = clamp_rms(k_mix - k_sel, 2.2), clamp_rms(v_mix - v_sel, 1.4)
-            dk, dv = _smooth_tokens(dk, 1 + int(3 * cfg_fac)), _smooth_tokens(dv, 2 + int(3 * cfg_fac)); dv = dv - dv.mean(dim=1, keepdim=True)
+            dk, dv = clamp_rms(k_mix - k_sel, 4.5), clamp_rms(v_mix - v_sel, 3.5)
+            dk, dv = _smooth_tokens(dk, 1 + int(3 * cfg_fac)), _smooth_tokens(dv, 2 + int(3 * cfg_fac))
             a_k_tok = _smooth_tokens((a_k_vec.view(-1, 1) * gate_k_w).unsqueeze(-1).to(k_sel.dtype), 1 + int(2 * cfg_fac))
             a_v_tok = _smooth_tokens((a_v_vec.view(-1, 1) * gate_k_w).unsqueeze(-1).to(v_sel.dtype), 1 + int(2 * cfg_fac))
             k_new_sel = rms_match(k_sel + a_k_tok * dk, k_sel); v_new_sel = rms_match(v_sel + a_v_tok * dv, v_sel)
@@ -173,12 +174,12 @@ class TWS:
             top_vals_q, top_idx_q = I_q.topk(q_tokens, dim=-1, largest=True, sorted=False)
             gate_q_w = torch.zeros_like(I_q, dtype=torch.float32); gate_q_w.scatter_(1, top_idx_q, 1.0)
             gate_q_w = _smooth_tokens(gate_q_w.unsqueeze(-1), 1 + int(2 * cfg_fac)).squeeze(-1).clamp(0.0, 1.0)
-            q_perm, _ = _shuffle_tokens(q_sel, q_sel, I * 0.6, phase, cfg_fac); q_mix = rms_match(q_perm, q_sel)
+            q_perm, _ = _shuffle_tokens(q_sel, q_sel, I * 1.0, phase, cfg_fac); q_mix = rms_match(q_perm, q_sel)
             q_mix = orthogonal_noise(q_mix, I_q, 0.35 * noise_k_strength, "q")
-            kl_cap_q, a_q_max = 0.40 * kl_cap, 0.45 * a_k_max
+            kl_cap_q, a_q_max = 0.9 * kl_cap, 0.9 * a_k_max
             a_q_vec = torch.zeros(q_sel.shape[0], device=q_sel.device) if float(I_k.amax().item()) < 0.2 else bsearch_alpha_vec_mix_q(q_sel, k_sel, A0_fullQ, q_mix, cap_scale * a_q_max, kl_cap_q, 5)
-            dq = clamp_rms(q_mix - q_sel)
-            a_q_tok = _smooth_tokens((0.60 * a_q_vec.view(-1, 1) * gate_q_w).unsqueeze(-1).to(q_sel.dtype), 1 + int(2 * cfg_fac))
+            dq = clamp_rms(q_mix - q_sel, 4.0)
+            a_q_tok = _smooth_tokens((0.90 * a_q_vec.view(-1, 1) * gate_q_w).unsqueeze(-1).to(q_sel.dtype), 1 + int(2 * cfg_fac))
             q_new_sel = (q_sel + a_q_tok * dq).to(q_sel.dtype)
             q_out, k_out, v_out = q.clone(), k.clone(), v.clone()
             q_out.index_copy_(0, idx, q_new_sel.to(q_out.dtype)); k_out.index_copy_(0, idx, k_new_sel.to(k_out.dtype)); v_out.index_copy_(0, idx, v_new_sel.to(v_out.dtype))
