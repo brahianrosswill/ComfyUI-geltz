@@ -50,7 +50,7 @@ Global edge-aware smoothing that flattens regions while preserving sharp boundar
 **Temperature Adjust (tmp)**  
 LAB-space white-balance adjustment with HSV saturation compensation, range -1.0…+1.0.
 
-Information
+Metadata
 
 **Color Palette Extractor (cpe)**  
 Extracts N dominant colors via MiniBatchKMeans and outputs palette image plus CSV of hex codes.
@@ -114,6 +114,7 @@ Strengthens prompt adherence by nudging CLIP embeddings toward soft top-k neighb
 **ORBIT Merge (orbit)**  
 Direction-aware model merger decomposing deltas into parallel/orthogonal components with independent scaling.  
 *Uses the [sd-mecha](https://github.com/ljleb/sd-mecha) API*
+
 
 
 
