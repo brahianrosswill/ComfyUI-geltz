@@ -1,7 +1,7 @@
 import torch
 import torch.nn.functional as F
 
-class KuwaharaBlur:
+class KuwaharaFilter:
     @classmethod
     def INPUT_TYPES(cls):
         return {
@@ -39,5 +39,5 @@ class KuwaharaBlur:
         mask = F.one_hot(idx.squeeze(1), 4).permute(3, 0, 1, 2).unsqueeze(2).to(mean.dtype)
         return (mean * mask).sum(0)
 
-NODE_CLASS_MAPPINGS = {"KuwaharaBlur": KuwaharaBlur}
-NODE_DISPLAY_NAME_MAPPINGS = {"KuwaharaBlur": "Kuwahara Blur"}
+NODE_CLASS_MAPPINGS = {"KuwaharaFilter": KuwaharaFilter}
+NODE_DISPLAY_NAME_MAPPINGS = {"KuwaharaFilter": "Kuwahara Filter"}
