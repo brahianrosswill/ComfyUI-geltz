@@ -65,7 +65,8 @@ Generates structured initial latents via gradient ascent on a differentiable sco
 ### Loaders
 
 **Lora Config (loracfg)**  
-Parses `.safetensors` header and extracts only human-readable metadata as JSON (filters out tensor entries). Returns `{ "metadata": { ... } }` for clean use in [Kohya's sd-scripts.](https://github.com/kohya-ss/sd-scripts)
+Parses `.safetensors` header and extracts only human-readable metadata as JSON (filters out tensor entries). Returns `{ "metadata": { ... } }` for pipeline use.
+*Output format compatible with [Kohya's sd-scripts.](https://github.com/kohya-ss/sd-scripts)*
 
 ### Samplers
 
@@ -97,4 +98,5 @@ Strengthens prompt adherence by nudging CLIP embeddings toward soft top-k neighb
 **ORBIT Merge (orbit)**  
 Direction-aware model merger decomposing source–base delta into parallel/orthogonal components. Scales components independently with per-tensor trust blending. Supports UNet/CLIP/LoRA state dicts and mixed precision.
 *Uses the [sd-mecha](https://github.com/ljleb/sd-mecha) API*
+
 
