@@ -40,7 +40,7 @@ Perturbs attention via controlled local shuffling of keys/values. Uses log-sigma
 
 **Token-Weighted Shuffle (tws)**  
 Remixes nearby tokens in entropy-selected attention heads using banded top-k within a shrinking window. Includes RMS matching, KL-bounded strength tuning, and optional query mirroring.  
-*Inspired by [Token Perturbation Guidance](https://github.com/TaatiTeam/Token-Perturbation-Guidance)*
+*Inspired by [Token Perturbation Guidance](https://arxiv.org/abs/2506.10036)*
 
 **Velocity Scaling (vs)**  
 Adapted from Epsilon Scaling for v-prediction models. Reduces over-brightening tendency in generated images.  
@@ -98,6 +98,7 @@ Strengthens prompt adherence by nudging CLIP embeddings toward soft top-k neighb
 **ORBIT Merge (orbit)**  
 Direction-aware model merger decomposing source–base delta into parallel/orthogonal components. Scales components independently with per-tensor trust blending. Supports UNet/CLIP/LoRA state dicts and mixed precision.
 *Uses the [sd-mecha](https://github.com/ljleb/sd-mecha) API*
+
 
 
 
