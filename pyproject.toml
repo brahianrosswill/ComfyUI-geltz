@@ -1,6 +1,6 @@
 [project]
 name = "ComfyUI-geltz"
-description = "Nodes for dynamic CFG scaling, latent/image manipulation, custom samplers, and CLIP token utilities"
+description = "Nodes for dynamic CFG scaling, latents, image manipulation, custom samplers, and CLIP token utilities"
 version = "1.0.0"
 license = { file = "LICENSE" }
 
