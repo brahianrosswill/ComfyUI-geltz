@@ -100,8 +100,8 @@ Non-linear sigma schedule interpolating in arctan space using cosine weighting.
 
 ### Tokens
 
-**tokenteller (tt)** 
-Visualizes token influence to detect prompt bleed via 2D wave path with normalized spikes.
+**tokenteller (tt)**   
+Visualizes token influence to detect prompt bleed via 2D wave path with normalized spikes.  
 
 **vectorpusher (vp)**  
 Strengthens prompt adherence by nudging CLIP embeddings toward soft top-k neighbor blends.  
@@ -114,6 +114,7 @@ Strengthens prompt adherence by nudging CLIP embeddings toward soft top-k neighb
 **ORBIT Merge (orbit)**  
 Direction-aware model merger decomposing deltas into parallel/orthogonal components with independent scaling.  
 *Uses the [sd-mecha](https://github.com/ljleb/sd-mecha) API*
+
 
 
 
