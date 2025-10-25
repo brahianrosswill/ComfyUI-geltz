@@ -1,7 +1,7 @@
 import torch
 import numpy as np
 
-class temperator:
+class Temperature Adjust:
     
     @classmethod
     def INPUT_TYPES(cls):
@@ -193,9 +193,9 @@ class temperator:
 
 
 NODE_CLASS_MAPPINGS = {
-    "temperator": temperator
+    "Temperature Adjust": Temperature Adjust
 }
 
 NODE_DISPLAY_NAME_MAPPINGS = {
-    "temperator": "temperator"
+    "Temperature Adjust": "Temperature Adjust"
 }
