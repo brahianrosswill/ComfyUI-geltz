@@ -55,8 +55,6 @@ Generates structured initial latents via gradient ascent on a differentiable sco
 
 ### Filters
 
-Using batched tensor operations for speed.
-
 **Kuwahara Filter (kwh)**  
 Fast edge-preserving filter selecting mean color from the minimum-variance quadrant.
 
