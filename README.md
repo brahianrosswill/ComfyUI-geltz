@@ -24,7 +24,7 @@ Halo-free, multi-scale detail/tone manipulation via Laplacian pyramids. Compress
 **L₀ Gradient Minimization (lzero)**  
 Global edge-aware smoothing that sparsifies image gradients to flatten regions while preserving sharp boundaries. Uses alternating hard-shrinkage on gradients with FFT-based Poisson.
 
-**Temperature Adjust (temper)**  
+**Temperature Adjust (tmp)**  
 LAB-space white-balance/temperature adjust with HSV saturation compensation. Warms (yellow–orange) or cools (blue–cyan) with bounded luminance changes; batch-safe and numerically clipped. Range -1.0…+1.0.
 
 ### Guidance
@@ -51,10 +51,10 @@ Adapted from Epsilon Scaling for v-prediction models. Reduces over-brightening t
 **Color Palette Extractor (palette)**  
 MiniBatchKMeans on sampled pixels to find N dominant colors. Outputs a palette image (strip or grid) and a CSV of hex codes for quick reuse.
 
-**Image Metadata Extractor (imeta.info)**  
+**Image Metadata Extractor (ime.info)**  
 Reads PNG/TIFF info and outputs a normalized, readable prompt/settings summary as a single `STRING` (no image passthrough).
 
-**Load Image With Metadata (imeta.load)**  
+**Load Image With Metadata (ime.load)**  
 Loads an image from `/input`, extracts embedded prompts/settings (Automatic1111, ComfyUI, or generic) into a unified text block, and returns `(IMAGE, MASK, STRING)` with alpha-inverted mask handling.
 
 ### Latents
@@ -98,6 +98,7 @@ Strengthens prompt adherence by nudging CLIP embeddings toward soft top-k neighb
 **ORBIT Merge (orbit)**  
 Direction-aware model merger decomposing source–base delta into parallel/orthogonal components. Scales components independently with per-tensor trust blending. Supports UNet/CLIP/LoRA state dicts and mixed precision.
 *Uses the [sd-mecha](https://github.com/ljleb/sd-mecha) API*
+
 
 
 
