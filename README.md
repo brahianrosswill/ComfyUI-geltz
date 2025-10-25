@@ -1,6 +1,6 @@
 # ComfyUI-geltz
 
-Advanced nodes for guidance manipulation, latent/image operations, and flexible sampling control.
+Advanced nodes for guidance manipulation, latent generation, image operations, and flexible sampling control.
 
 ## Installation
 
@@ -98,3 +98,4 @@ Strengthens prompt adherence by nudging CLIP embeddings toward soft top-k neighb
 **ORBIT Merge (orbit)**  
 Direction-aware model merger decomposing deltas into parallel/orthogonal components with independent scaling.  
 *Uses the [sd-mecha](https://github.com/ljleb/sd-mecha) API*
+
